@@ -3,7 +3,7 @@
   "description": "A Node.js WiredTiger binding",
   "version": "0.1.0",
   "contributors": [
-    "Alexander Gorrod <alexander.gorrod@wiredtiger.com> (https://github.com/agorrod)",
+    "Alexander Gorrod <alexander.gorrod@wiredtiger.com> (https://github.com/agorrod)"
   ],
   "repository": {
     "type": "git",
@@ -17,17 +17,18 @@
   ],
   "main": "index.js",
   "dependencies": {
-    "underscore": "~1.1.1",
+    "nan": "~0.6.0",
+    "underscore": "~1.1.1"
   },
   "devDependencies": {
+    "bindings" : "~1.1.1",
     "tap": "~0.4.1",
     "node-gyp": "~0.12.1"
   },
-  { "scripts" :
+  "scripts" :
     { "preinstall" : "make config && make all"
       , "test": "tap test/*-test.js --stderr"
-    }
-  },
+    },
   "license": "GPLv3",
   "gypfile": true
 }

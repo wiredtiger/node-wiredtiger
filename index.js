@@ -1,3 +1,5 @@
-var addon = require('./build/Release/wiredtiger');
+module.exports = require('bindings')('wiredtiger.node').wiredtiger
 
-console.log(addon.createDatabase());
+//var addon = module.exports
+
+//addon.createDatabase('/tmp/test', 'create'));
