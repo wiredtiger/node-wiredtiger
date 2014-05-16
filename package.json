@@ -1,0 +1,33 @@
+{
+  "name": "wiredtiger",
+  "description": "A Node.js WiredTiger binding",
+  "version": "0.1.0",
+  "contributors": [
+    "Alexander Gorrod <alexander.gorrod@wiredtiger.com> (https://github.com/agorrod)",
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wiredtiger/node-wiredtiger.git"
+  },
+  "homepage": "http://wiredtiger.com",
+  "keywords": [
+    "wiredtiger",
+    "database",
+    "key/value"
+  ],
+  "main": "index.js",
+  "dependencies": {
+    "underscore": "~1.1.1",
+  },
+  "devDependencies": {
+    "tap": "~0.4.1",
+    "node-gyp": "~0.12.1"
+  },
+  { "scripts" :
+    { "preinstall" : "make config && make all"
+      , "test": "tap test/*-test.js --stderr"
+    }
+  },
+  "license": "GPLv3",
+  "gypfile": true
+}

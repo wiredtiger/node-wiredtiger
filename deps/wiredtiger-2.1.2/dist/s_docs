@@ -1,0 +1,141 @@
+#! /bin/sh
+
+t=__wt.$$
+trap 'rm -f $t; exit 0' 0 1 2 3 13 15
+
+# Skip this when building release packages: docs are built separately
+test -n "$WT_RELEASE_BUILD" && exit 0
+
+# We require doxygen which may not be installed.
+type doxygen > /dev/null 2>&1 || {
+	echo 'skipped: doxygen not found'
+	exit 0
+}
+
+. ../RELEASE
+
+e=0
+
+sectionchk()
+{
+	# sections are a global name space for doxygen, and must be uniquely
+	# named or you can get the wrong results.  For example, if you have
+	# "@section foo ABC" and "@section foo DEF", they will both appear as
+	# "ABC" or "DEF".
+	(cd ../src/docs &&
+	egrep -h '@section' *.dox |
+	sort -u | awk '{ print $2 }' | sort | uniq -d) > $t
+	test -s $t && {
+		echo "=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
+		echo '@section references that are not uniquely named'
+		sed -e 's/^/	/' < $t
+		echo "=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
+		e=1
+	}
+}
+
+spellchk()
+{
+	# If aspell has been installed, run a spell check.
+	type aspell > /dev/null 2>&1 || return
+
+	(cd ../src/docs &&
+	cat *.dox | aspell --lang=en --personal=./spell.ok list) |
+	sort -u > $t
+	test -s $t && {
+		echo "=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
+		echo 'Documentation spelling notes'
+		echo 'Update src/docs/spell.ok to remove warnings.'
+		sed -e 's/^/	/' < $t
+		echo "=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
+		e=1
+	}
+}
+
+valid_build()
+{
+	# Complain if there are pages we don't reference directly.
+	sed -n '/<table.*directory/,/\/table/p' < ../docs/pages.html | \
+	    grep href > /dev/null && {
+		echo 'Unreferenced page: see docs/pages.html for the list.'
+		e=1
+	}
+}
+
+build()
+{
+	# Build from scratch on demand.
+	[ "$1" -eq 0 ] || (cd .. && rm -rf docs && mkdir docs)
+
+	# Run doxygen to generate warnings for the base HTML documentation.
+	#
+	# We omit Python because warnings are expected there (the code generated
+	# by swig does not have named arguments, but we want to document them
+	# as if they do.
+	(cd ../src/docs &&
+	    (eval cat Doxyfile $filter ; cat <<EOF
+QUIET=YES
+EOF
+) | doxygen -
+	test -s doxygen.log && cat doxygen.log) > $t 2>&1
+	test -s $t && {
+		cat $t
+		e=1
+	}
+
+	# Add optional extras
+	EXTRAS="../lang/java/src/com/wiredtiger/db ../lang/python/wiredtiger.py"
+	EXTRA_INPUT=""
+	for f in $EXTRAS ; do
+		[ -e "$f" ] && EXTRA_INPUT="$EXTRA_INPUT ../$f"
+	done
+
+	# Run again to generate the full doc set with Python and Java.
+	[ "$additional_languages" -eq 1 ] && [ "x$EXTRA_INPUT" != "x" ] && (
+	cd ../src/docs &&
+		(eval cat Doxyfile $filter ; cat <<EOF
+QUIET=YES
+INPUT+=$EXTRA_INPUT
+EOF
+) | doxygen -)
+
+	# Fix up bad links doxygen generates in navtree.js
+	(cd ../docs &&
+	    sed -i~ -e 's,/\.html,/,' -e 's,\.html\.html,.html,' navtree.js &&
+	    rm -f navtree.js~)
+}
+
+clean=0
+additional_languages=1
+filter="|sed '/PROJECT_NUMBER/s,=.*,=\"Version $WIREDTIGER_VERSION\",'"
+while :
+	do case "$1" in
+	-a)	# Build from scratch
+		clean=1
+		shift;;
+	-l)	# Generate the top-level landing page in ../docs/top
+		filter="$filter; cat top/Doxyfile"
+		additional_languages=0
+		shift;;
+	-p)	# Generate PDFs
+		filter="$filter| sed '/GENERATE_LATEX/s,=.*,=YES,'"
+		shift;;
+	-t)	# Include the TODO list
+		filter="$filter| sed '/GENERATE_TODOLIST/s,=.*,=YES,'"
+		shift;;
+	*)
+		break;;
+	esac
+done
+
+# Spell and section-name check the documentation.
+spellchk
+sectionchk
+
+# Build the documentation.
+build $clean
+
+# Any post-build validity checks we want to make.
+valid_build
+
+exit $e
