@@ -13,23 +13,25 @@ class WTConnection : public node::ObjectWrap {
 public:
 	static void Init();
 	static v8::Handle<v8::Value> NewInstance(
-	    v8::Local<v8::String> &home, v8::Local<v8::String> &options);
-	int OpenConnection(const char *home, const char *options);
+	    v8::Local<v8::String> &home, v8::Local<v8::String> &config);
+	int OpenConnection(const char *home, const char *config);
 
-	WTConnection(char *home, char *options);
+	WTConnection(char *home, char *config);
 	~WTConnection();
 
 	const char *home() const;
-	const char *options() const;
+	const char *config() const;
+	WT_CONNECTION *conn() const;
 
 private:
 	static NAN_METHOD(New);
+	static NAN_METHOD(Create);
 	static NAN_METHOD(Open);
 	static NAN_METHOD(Put);
 	static NAN_METHOD(Search);
 
 	char *home_;
-	char *options_;
+	char *config_;
 	WT_CONNECTION *conn_;
 };
 
@@ -39,7 +41,7 @@ public:
 	    WTConnection *conn,
 	    NanCallback *callback,
 	    const char *home,
-	    const char *options
+	    const char *config
 	);
 
 	ConnectionWorker();
@@ -47,7 +49,24 @@ public:
 private:
 	WTConnection *conn_;
 	const char *home_;
-	const char *options_;
+	const char *config_;
+};
+
+class CreateWorker : public NanAsyncWorker {
+public:
+	CreateWorker(
+	    WTConnection *conn,
+	    NanCallback *callback,
+	    const char *home,
+	    const char *config
+	);
+
+	CreateWorker();
+	virtual void Execute();
+private:
+	WTConnection *conn_;
+	const char *uri_;
+	const char *config_;
 };
 } // namespace wiredtiger
 
