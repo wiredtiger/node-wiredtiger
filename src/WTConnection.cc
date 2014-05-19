@@ -53,9 +53,8 @@ void WTConnection::Init() {
 	tpl->SetClassName(NanSymbol("WTConnection"));
 	tpl->InstanceTemplate()->SetInternalFieldCount(2);
 	NODE_SET_PROTOTYPE_METHOD(tpl, "Open", WTConnection::Open);
-	NODE_SET_PROTOTYPE_METHOD(tpl, "Create", WTConnection::Create);
-	NODE_SET_PROTOTYPE_METHOD(tpl, "Put", WTConnection::Put);
-	NODE_SET_PROTOTYPE_METHOD(tpl, "Search", WTConnection::Search);
+	NODE_SET_PROTOTYPE_METHOD(tpl,
+	    "OpenTable", WTConnection::OpenTable);
 }
 
 NAN_METHOD(WTConnection::New) {
@@ -122,7 +121,7 @@ NAN_METHOD(WTConnection::Open) {
 	NanReturnUndefined();
 }
 
-NAN_METHOD(WTConnection::Create) {
+NAN_METHOD(WTConnection::OpenTable) {
 	NanScope();
 	if (args.Length() < 2 || !args[0]->IsString())
 		return NanThrowError(
@@ -147,22 +146,13 @@ NAN_METHOD(WTConnection::Create) {
 	wiredtiger::WTConnection *conn =
 	    node::ObjectWrap::Unwrap<wiredtiger::WTConnection>(args.This());
 
-	CreateWorker *worker = new CreateWorker(
+	OpenTableWorker *worker = new OpenTableWorker(
 	    conn, new NanCallback(callback), uri, config);
 
 	// Avoid GC
 	v8::Local<v8::Object> _this = args.This();
 	worker->SavePersistent("connection", _this);
 	NanAsyncQueueWorker(worker);
-	NanReturnUndefined();
-}
-
-NAN_METHOD(WTConnection::Put) {
-	NanScope();
-	NanReturnUndefined();
-}
-NAN_METHOD(WTConnection::Search) {
-	NanScope();
 	NanReturnUndefined();
 }
 }

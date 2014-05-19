@@ -11,6 +11,7 @@ namespace wiredtiger {
 
 void init(Handle<Object> target) {
 	WTConnection::Init();
+	WTTable::Init();
 	v8::Local<v8::Function> wiredtiger =
 	    v8::FunctionTemplate::New(WiredTiger)->GetFunction();
 	target->Set(NanSymbol("wiredtiger"), wiredtiger);

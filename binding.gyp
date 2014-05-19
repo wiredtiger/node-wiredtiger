@@ -4,8 +4,9 @@
       "target_name": "wiredtiger",
       "sources": [
           "src/wiredtiger.cc",
-          "src/wiredtiger_async.cc",
-          "src/WTConnection.cc"
+          "src/AsyncWorkers.cc",
+          "src/WTConnection.cc",
+          "src/WTTable.cc"
       ],
       "include_dirs": [ "./include", "<!(node -e \"require('nan')\")" ],
       "link_settings": {

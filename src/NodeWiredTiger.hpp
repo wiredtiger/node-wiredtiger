@@ -25,7 +25,7 @@ public:
 
 private:
 	static NAN_METHOD(New);
-	static NAN_METHOD(Create);
+	static NAN_METHOD(OpenTable);
 	static NAN_METHOD(Open);
 	static NAN_METHOD(Put);
 	static NAN_METHOD(Search);
@@ -33,6 +33,31 @@ private:
 	char *home_;
 	char *config_;
 	WT_CONNECTION *conn_;
+};
+
+class WTTable : public node::ObjectWrap {
+public:
+	static void Init();
+	static v8::Handle<v8::Value> NewInstance(
+	    v8::Local<v8::Object> &wtconn,
+	    v8::Local<v8::String> &home,
+	    v8::Local<v8::String> &config);
+
+	WTTable(WTConnection *wtconn, char *home, char *config);
+	~WTTable();
+
+	WTConnection *wtconn() const;
+	const char *uri() const;
+	const char *config() const;
+
+private:
+	static NAN_METHOD(New);
+	static NAN_METHOD(Put);
+	static NAN_METHOD(Search);
+
+	WTConnection *wtconn_;
+	char *uri_;
+	char *config_;
 };
 
 class ConnectionWorker : public NanAsyncWorker {
@@ -52,16 +77,16 @@ private:
 	const char *config_;
 };
 
-class CreateWorker : public NanAsyncWorker {
+class OpenTableWorker : public NanAsyncWorker {
 public:
-	CreateWorker(
+	OpenTableWorker(
 	    WTConnection *conn,
 	    NanCallback *callback,
 	    const char *home,
 	    const char *config
 	);
 
-	CreateWorker();
+	OpenTableWorker();
 	virtual void Execute();
 private:
 	WTConnection *conn_;
