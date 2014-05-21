@@ -1,4 +1,4 @@
-WT_BUILD = deps/wiredtiger-2.1.2
+WT_BUILD = deps/wiredtiger-2.1.3
 
 all: build_wt
 	node-gyp build
