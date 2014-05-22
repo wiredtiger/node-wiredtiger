@@ -44,21 +44,24 @@ NAN_METHOD(WiredTiger) {
 	NanReturnValue(WTConnection::NewInstance(home, config));
 }
 
-void WTConnection::Init() {
-	v8::Local<v8::FunctionTemplate> tpl =
-	    v8::FunctionTemplate::New(WTConnection::New);
+void WTConnection::Init(Handle<Object> target) {
+	Local<FunctionTemplate> tpl = FunctionTemplate::New(New);
+	Local<String> name = String::NewSymbol("WTConnection");
 
-	NanAssignPersistent(v8::FunctionTemplate,
-	    wtconnection_constructor, tpl);
-	tpl->SetClassName(NanSymbol("WTConnection"));
+	fprintf(stderr, "Calling connection init\n");
+	tpl->SetClassName(name);
 	tpl->InstanceTemplate()->SetInternalFieldCount(2);
+	wtconnection_constructor = Persistent<FunctionTemplate>::New(tpl);
+
 	NODE_SET_PROTOTYPE_METHOD(tpl, "Open", WTConnection::Open);
 	NODE_SET_PROTOTYPE_METHOD(tpl,
 	    "OpenTable", WTConnection::OpenTable);
+
+	target->Set(name, wtconnection_constructor->GetFunction());
 }
 
-NAN_METHOD(WTConnection::New) {
-	NanScope();
+Handle<Value> WTConnection::New(const Arguments &args) {
+	HandleScope scope;
 
 	char *home = NULL;
 	char *config = NULL;
@@ -76,7 +79,9 @@ NAN_METHOD(WTConnection::New) {
 
 	WTConnection *conn = new WTConnection(home, config);
 	conn->Wrap(args.This());
-	NanReturnValue(args.This());
+	conn->Ref();
+
+	return args.This();
 }
 
 v8::Handle<v8::Value> WTConnection::NewInstance(

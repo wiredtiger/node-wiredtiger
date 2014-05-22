@@ -10,6 +10,7 @@ using namespace v8;
 namespace wiredtiger {
 
 static v8::Persistent<v8::FunctionTemplate> wttable_constructor;
+static v8::Persistent<v8::String> emit_symbol;
 
 WTTable::WTTable(WTConnection *wtconn, char *uri, char *config)
     : wtconn_(wtconn), uri_(uri), config_(config) {
@@ -27,21 +28,24 @@ WTConnection * WTTable::wtconn() const { return wtconn_; }
 
 /* V8 exposed functions */
 
-void WTTable::Init() {
-	v8::Local<v8::FunctionTemplate> tpl =
-	    v8::FunctionTemplate::New(WTTable::New);
+void WTTable::Init(Handle<Object> target) {
+	Local<FunctionTemplate> tpl = FunctionTemplate::New(New);
+	Local<String> name = String::NewSymbol("WTTable");
 
-	NanAssignPersistent(v8::FunctionTemplate,
-	    wttable_constructor, tpl);
-	tpl->SetClassName(NanSymbol("WTTable"));
-	tpl->InstanceTemplate()->SetInternalFieldCount(3);
+	fprintf(stderr, "Calling table init\n");
+	wttable_constructor = Persistent<FunctionTemplate>::New(tpl);
+	wttable_constructor->InstanceTemplate()->SetInternalFieldCount(3);
+	wttable_constructor->SetClassName(name);
 	NODE_SET_PROTOTYPE_METHOD(tpl, "New", WTTable::New);
+	NODE_SET_PROTOTYPE_METHOD(tpl, "Open", WTTable::Open);
 	NODE_SET_PROTOTYPE_METHOD(tpl, "Put", WTTable::Put);
 	NODE_SET_PROTOTYPE_METHOD(tpl, "Search", WTTable::Search);
+	emit_symbol = NODE_PSYMBOL("emit");
+	target->Set(name, wttable_constructor->GetFunction());
 }
 
-NAN_METHOD(WTTable::New) {
-	NanScope();
+Handle<Value> WTTable::New(const Arguments &args) {
+	HandleScope scope;
 
 	char *uri = NULL;
 	char *config = NULL;
@@ -62,8 +66,20 @@ NAN_METHOD(WTTable::New) {
 	}
 
 	WTTable *table = new WTTable(wtconn, uri, config);
+
 	table->Wrap(args.This());
-	NanReturnValue(args.This());
+	table->Ref();
+	table->Emit = Persistent<Function>::New(
+	    Local<Function>::Cast(table->handle_->Get(emit_symbol)));
+	// Notify that the table is ready.
+#if 0
+	Handle<Value> eArgs[1] = { String::New("open") };
+	fprintf(stderr, "Calling open event (I hope)\n");
+	//table->Emit->Call(table->handle_, 1, eArgs);
+	node::MakeCallback(args.This(), "emit", 1, eArgs);
+#endif
+
+	return args.This();
 }
 
 v8::Handle<v8::Value> WTTable::NewInstance(
@@ -90,7 +106,31 @@ v8::Handle<v8::Value> WTTable::NewInstance(
 		instance =
 		    constructorHandle->GetFunction()->NewInstance(3, argv);
 	}
+
 	return instance;
+}
+
+Handle<Value> WTTable::Open(const Arguments &args) {
+	HandleScope scope;
+
+	wiredtiger::WTTable *table =
+	    node::ObjectWrap::Unwrap<WTTable>(args.This());
+
+	if (args.Length() != 1)
+		return NanThrowError(
+		    "WTTable::Open() requires a callback argument");
+	v8::Local<v8::Function> callback = args[0].As<v8::Function>();
+	OpenTableWorker *worker = new OpenTableWorker(
+	    table->wtconn(),
+	    new NanCallback(callback),
+	    table->uri(),
+	    table->config());
+
+	// Avoid GC
+	v8::Local<v8::Object> _this = args.This();
+	worker->SavePersistent("table", _this);
+	NanAsyncQueueWorker(worker);
+	NanReturnUndefined();
 }
 
 typedef struct {

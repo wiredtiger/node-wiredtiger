@@ -1,5 +1,8 @@
-module.exports = require('bindings')('wiredtiger.node').wiredtiger
+//module.exports = require('bindings')('wiredtiger.node')
 
-//var addon = module.exports
+var EventEmitter = require('events').EventEmitter,
+    addon = require('bindings')('wiredtiger.node');
 
-//addon.createDatabase('/tmp/test', 'create'));
+addon.WTTable.prototype.__proto__ = EventEmitter.prototype;
+
+module.exports = addon;

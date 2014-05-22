@@ -11,7 +11,7 @@ NAN_METHOD(WiredTiger);
 
 class WTConnection : public node::ObjectWrap {
 public:
-	static void Init();
+	static void Init(v8::Handle<v8::Object> target);
 	static v8::Handle<v8::Value> NewInstance(
 	    v8::Local<v8::String> &home, v8::Local<v8::String> &config);
 	int OpenConnection(const char *home, const char *config);
@@ -37,21 +37,23 @@ private:
 
 class WTTable : public node::ObjectWrap {
 public:
-	static void Init();
+	static void Init(v8::Handle<v8::Object> target);
 	static v8::Handle<v8::Value> NewInstance(
 	    v8::Local<v8::Object> &wtconn,
-	    v8::Local<v8::String> &home,
+	    v8::Local<v8::String> &uri,
 	    v8::Local<v8::String> &config);
 
 	WTTable(WTConnection *wtconn, char *home, char *config);
 	~WTTable();
 
+	v8::Persistent<v8::Function> Emit;
 	WTConnection *wtconn() const;
 	const char *uri() const;
 	const char *config() const;
 
 private:
 	static NAN_METHOD(New);
+	static NAN_METHOD(Open);
 	static NAN_METHOD(Put);
 	static NAN_METHOD(Search);
 

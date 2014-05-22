@@ -7,15 +7,15 @@
 
 using namespace v8;
 
-namespace wiredtiger {
-
-void init(Handle<Object> target) {
-	WTConnection::Init();
-	WTTable::Init();
-	v8::Local<v8::Function> wiredtiger =
-	    v8::FunctionTemplate::New(WiredTiger)->GetFunction();
-	target->Set(NanSymbol("wiredtiger"), wiredtiger);
+extern "C" {
+void InitAll(Handle<Object> target) {
+	HandleScope scope;
+	wiredtiger::WTConnection::Init(target);
+	wiredtiger::WTTable::Init(target);
+	//Local<Function> wiredtiger = FunctionTemplate::New(WiredTiger)->GetFunction();
+	//target->Set(String::NewSymbol("wiredtiger"), wiredtiger);
 }
-NODE_MODULE(wiredtiger, init)
 
-} // namespace wiredtiger
+NODE_MODULE(wiredtiger, InitAll)
+
+}
