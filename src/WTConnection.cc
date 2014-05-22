@@ -54,8 +54,6 @@ void WTConnection::Init(Handle<Object> target) {
 	wtconnection_constructor = Persistent<FunctionTemplate>::New(tpl);
 
 	NODE_SET_PROTOTYPE_METHOD(tpl, "Open", WTConnection::Open);
-	NODE_SET_PROTOTYPE_METHOD(tpl,
-	    "OpenTable", WTConnection::OpenTable);
 
 	target->Set(name, wtconnection_constructor->GetFunction());
 }
@@ -126,6 +124,7 @@ NAN_METHOD(WTConnection::Open) {
 	NanReturnUndefined();
 }
 
+#if 0
 NAN_METHOD(WTConnection::OpenTable) {
 	NanScope();
 	if (args.Length() < 2 || !args[0]->IsString())
@@ -160,4 +159,5 @@ NAN_METHOD(WTConnection::OpenTable) {
 	NanAsyncQueueWorker(worker);
 	NanReturnUndefined();
 }
+#endif
 }

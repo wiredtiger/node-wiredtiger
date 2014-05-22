@@ -46,6 +46,7 @@ public:
 	WTTable(WTConnection *wtconn, char *home, char *config);
 	~WTTable();
 
+	int OpenTable();
 	v8::Persistent<v8::Function> Emit;
 	WTConnection *wtconn() const;
 	const char *uri() const;
@@ -82,18 +83,14 @@ private:
 class OpenTableWorker : public NanAsyncWorker {
 public:
 	OpenTableWorker(
-	    WTConnection *conn,
-	    NanCallback *callback,
-	    const char *home,
-	    const char *config
+	    WTTable *table,
+	    NanCallback *callback
 	);
 
 	OpenTableWorker();
 	virtual void Execute();
 private:
-	WTConnection *conn_;
-	const char *uri_;
-	const char *config_;
+	WTTable *table_;
 };
 } // namespace wiredtiger
 

@@ -2,6 +2,7 @@
 #include "wiredtiger.h"
 #include <unistd.h> // For sleep
 #include <stdlib.h> // For malloc
+#include <string>
 
 #include "NodeWiredTiger.hpp"
 
@@ -61,7 +62,7 @@ Handle<Value> WTTable::New(const Arguments &args) {
 		if (!args[2]->IsString())
 			return NanThrowError(
 			    "Constructor option must be a string");
-		config = NanFromV8String(args[1].As<v8::Object>(),
+		config = NanFromV8String(args[2].As<v8::Object>(),
 		    Nan::UTF8, NULL, NULL, 0, v8::String::NO_OPTIONS);
 	}
 
@@ -110,6 +111,37 @@ v8::Handle<v8::Value> WTTable::NewInstance(
 	return instance;
 }
 
+/* Called from callback thread. */
+int WTTable::OpenTable() {
+	WT_CONNECTION *conn;
+	WT_SESSION *session;
+
+	std::string final_config;
+	size_t create_start;
+	int ret;
+
+	fprintf(stderr, "In WTTable::OpenTable %s, %s\n",
+	    uri_, config_);
+	/* If there is no create in the config, nothing more to do. */
+	if (config() == NULL)
+	       return (0);
+	final_config = std::string(config());
+	if ((create_start = final_config.find("create")) == std::string::npos)
+		return (0);
+
+	/* There was a "create" - strip it from the original. */
+	final_config = final_config.erase(create_start, 6);
+
+	conn = wtconn()->conn();
+	fprintf(stderr, "Creating table: %s, %s\n", uri(), final_config.c_str());
+	if ((ret = conn->open_session(conn, NULL, NULL, &session)) != 0)
+		return (ret);
+	if ((ret = session->create(
+	    session, uri(), final_config.c_str())) != 0)
+		return (ret);
+	return (0);
+}
+
 Handle<Value> WTTable::Open(const Arguments &args) {
 	HandleScope scope;
 
@@ -121,11 +153,10 @@ Handle<Value> WTTable::Open(const Arguments &args) {
 		    "WTTable::Open() requires a callback argument");
 	v8::Local<v8::Function> callback = args[0].As<v8::Function>();
 	OpenTableWorker *worker = new OpenTableWorker(
-	    table->wtconn(),
-	    new NanCallback(callback),
-	    table->uri(),
-	    table->config());
+	    table,
+	    new NanCallback(callback));
 
+	fprintf(stderr, "In WTTable::Open\n");
 	// Avoid GC
 	v8::Local<v8::Object> _this = args.This();
 	worker->SavePersistent("table", _this);
@@ -159,6 +190,7 @@ WTAsyncCallbackFunction(
 {
 	ASYNC_OP_COOKIE *cookie = (ASYNC_OP_COOKIE *)op->app_data;
 
+	fprintf(stderr, "Did WiredTiger put, in callback.\n");
 	if (op->get_type(op) == WT_AOP_INSERT) {
 		Handle<Value> argv[1];
 		if (ret != 0)
@@ -208,6 +240,8 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 	char *value = NanFromV8String(args[1].As<v8::Object>(),
 	    Nan::UTF8, NULL, NULL, 0, v8::String::NO_OPTIONS);
 
+	fprintf(stderr, "In WTTable::Put(%s, %s)\n", key, value);
+
 	// TODO: Free this memory.
 	// Get setup to call the WiredTiger async operation.
 	ASYNC_OP_COOKIE *cookie =
@@ -220,10 +254,11 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 	req->data = cookie;
 	// Setup the WiredTiger async operation
 	WTConnection *wtconn;
-	WT_ASYNC_OP *wtOp;
+	WT_ASYNC_OP *wtOp = NULL;
 	wtconn = table->wtconn();
 	if ((ret = wtconn->conn()->async_new_op(wtconn->conn(),
 	    table->uri(), NULL, &WTAsyncCallback, &wtOp)) != 0) {
+		fprintf(stderr, "Async op start failed: %s\n", wiredtiger_strerror(ret));
 	}
 	wtOp->app_data = cookie;
 	wtOp->set_key(wtOp, key);
