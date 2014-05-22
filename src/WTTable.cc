@@ -190,7 +190,10 @@ WTAsyncCallbackFunction(
 {
 	ASYNC_OP_COOKIE *cookie = (ASYNC_OP_COOKIE *)op->app_data;
 
-	fprintf(stderr, "Did WiredTiger put, in callback.\n");
+	fprintf(stderr, "Did WiredTiger put, in callback. ret: %d, cookie: %p,req %p\n",
+	    ret, cookie, cookie->req);
+
+#if 0
 	if (op->get_type(op) == WT_AOP_INSERT) {
 		Handle<Value> argv[1];
 		if (ret != 0)
@@ -201,21 +204,24 @@ WTAsyncCallbackFunction(
 		cookie->argc = 1;
 		cookie->argv = argv;
 	}
+#endif
 
 	// TODO: How do we pass in parameters to the callback?
+	fprintf(stderr, "Did WiredTiger put, in callback b4 send.\n");
 	uv_async_send(cookie->req);
+	fprintf(stderr, "Did WiredTiger put, in callback after send.\n");
 
 	// Cheat - for now wait until the callback will be finished
 	// so we don't need to know when to free resources. We'll need
 	// to figure out how to hold the argv around too when solving this
 	// for real.
-	sleep(1);
+	//sleep(1);
 	// TODO: Can close_cb be NULL, will this cancel our async_send?
 	// See: https://github.com/joyent/libuv/blob/master/include/uv.h
 	// This is invalid - calling close will cancel the callback, it needs
 	// to be done as part of a finalization or something. How can we
 	// know that the callback has been called in the main thread?
-	uv_close((uv_handle_t *)cookie->req, NULL);
+	//uv_close((uv_handle_t *)cookie->req, NULL);
 	return (0);
 }
 
@@ -251,6 +257,7 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 	uv_async_init(uv_default_loop(), req, HandleInsertOp);
 	// Make sure callback isn't garbage collected.
 	cookie->javaCallback = Persistent<Function>::New(callback);
+	cookie->req = req;
 	req->data = cookie;
 	// Setup the WiredTiger async operation
 	WTConnection *wtconn;
@@ -261,6 +268,7 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 		fprintf(stderr, "Async op start failed: %s\n", wiredtiger_strerror(ret));
 	}
 	wtOp->app_data = cookie;
+	fprintf(stderr, "In WTTable::Put(%s, %s)\n", key, value);
 	wtOp->set_key(wtOp, key);
 	wtOp->set_value(wtOp, value);
 	if ((ret = wtOp->insert(wtOp)) != 0) {

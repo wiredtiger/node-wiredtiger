@@ -1,7 +1,7 @@
 var wiredtiger = require('../'),
      _ = require('underscore');
 
-const numPuts = 10;
+const numPuts = 5;
 var didPut = _.after(numPuts, afterPuts);
 
 var conn = new wiredtiger.WTConnection(
@@ -10,7 +10,7 @@ conn.Open( function(err) {
 	if (err)
 		throw err
 	var table = new wiredtiger.WTTable(
-	    conn, 'table:test', 'create,key_format=s,value_format=s');
+	    conn, 'table:test', 'create,key_format=S,value_format=S');
 	table.Open( function(err) {
 		if (err)
 			throw err
@@ -21,11 +21,13 @@ conn.Open( function(err) {
 				if (err)
 					throw err
 				didPut();
-				console.log("Put into table")
+				console.log("Put into table");
 			});
 		}
 	});
 });
 
 function afterPuts() {
+	console.log("Finished puts! Yay!");
 }
+
