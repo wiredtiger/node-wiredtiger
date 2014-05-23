@@ -23,3 +23,27 @@ Platforms
 
 WiredTiger currently supports Linux, FreeBSD and Mac OS.
 
+Usage
+-----
+
+The best way to see usage is to view the test code. The code at
+test/test-basic.js is the recommended starting point.
+
+The following might help (though it could be outdated).
+
+```
+var wiredtiger = require('wiredtiger');
+
+var conn = new wiredtiger.WTConnection('/path/to/database/directory', 'create');
+conn.Open( function(err) {
+	var table = new wiredtiger.WTTable(
+	    conn, "table:test", "create,key_format=S,value_format=S");
+	table.Open( function(err) {
+		table.Put('abc', 'def', function(err) {
+			table.Search('abc', function(err, result) {
+				console.log("Woo! got: " + result);
+			});
+		});
+	});
+});
+```
