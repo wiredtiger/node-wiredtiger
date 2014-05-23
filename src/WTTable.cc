@@ -33,7 +33,6 @@ void WTTable::Init(Handle<Object> target) {
 	Local<FunctionTemplate> tpl = FunctionTemplate::New(New);
 	Local<String> name = String::NewSymbol("WTTable");
 
-	fprintf(stderr, "Calling table init\n");
 	wttable_constructor = Persistent<FunctionTemplate>::New(tpl);
 	wttable_constructor->InstanceTemplate()->SetInternalFieldCount(3);
 	wttable_constructor->SetClassName(name);
@@ -120,8 +119,6 @@ int WTTable::OpenTable() {
 	size_t create_start;
 	int ret;
 
-	fprintf(stderr, "In WTTable::OpenTable %s, %s\n",
-	    uri_, config_);
 	/* If there is no create in the config, nothing more to do. */
 	if (config() == NULL)
 	       return (0);
@@ -133,7 +130,8 @@ int WTTable::OpenTable() {
 	final_config = final_config.erase(create_start, 6);
 
 	conn = wtconn()->conn();
-	fprintf(stderr, "Creating table: %s, %s\n", uri(), final_config.c_str());
+	fprintf(stderr, "Creating table: %s, %s\n",
+	    uri(), final_config.c_str());
 	if ((ret = conn->open_session(conn, NULL, NULL, &session)) != 0)
 		return (ret);
 	if ((ret = session->create(
@@ -156,7 +154,6 @@ Handle<Value> WTTable::Open(const Arguments &args) {
 	    table,
 	    new NanCallback(callback));
 
-	fprintf(stderr, "In WTTable::Open\n");
 	// Avoid GC
 	v8::Local<v8::Object> _this = args.This();
 	worker->SavePersistent("table", _this);
@@ -167,6 +164,7 @@ Handle<Value> WTTable::Open(const Arguments &args) {
 typedef struct {
 	Persistent<Function> javaCallback;
 	uv_async_t *req;
+	int op_ret;
 	/* Setup in WT callback */
 	int argc;
 	Handle<Value> *argv;
@@ -179,6 +177,11 @@ HandleInsertOp(uv_async_t *handle, int status /* unused */) {
 	ASYNC_OP_COOKIE *cookie =
 	    static_cast<ASYNC_OP_COOKIE *>(handle->data);
 
+	if (cookie->op_ret != 0)
+		cookie->argv[0] = node::UVException(
+		    0, "WTTable::Put", wiredtiger_strerror(cookie->op_ret));
+	else
+		cookie->argv[0] = Local<Value>::New(Null());
 	cookie->javaCallback->Call(
 	    Context::GetCurrent()->Global(), cookie->argc, cookie->argv);
 	cookie->javaCallback.Dispose();
@@ -188,28 +191,14 @@ static int
 WTAsyncCallbackFunction(
     WT_ASYNC_CALLBACK *cb, WT_ASYNC_OP *op, int ret, uint32_t flags)
 {
+	//HandleScope scope;
 	ASYNC_OP_COOKIE *cookie = (ASYNC_OP_COOKIE *)op->app_data;
 
-	fprintf(stderr, "Did WiredTiger put, in callback. ret: %d, cookie: %p,req %p\n",
-	    ret, cookie, cookie->req);
 
-#if 0
-	if (op->get_type(op) == WT_AOP_INSERT) {
-		Handle<Value> argv[1];
-		if (ret != 0)
-			argv[0] = node::UVException(
-			    0, "WTTable::Put", wiredtiger_strerror(ret));
-		else
-			argv[0] = Local<Value>::New(Null());
-		cookie->argc = 1;
-		cookie->argv = argv;
-	}
-#endif
+	cookie->op_ret = ret;
 
 	// TODO: How do we pass in parameters to the callback?
-	fprintf(stderr, "Did WiredTiger put, in callback b4 send.\n");
 	uv_async_send(cookie->req);
-	fprintf(stderr, "Did WiredTiger put, in callback after send.\n");
 
 	// Cheat - for now wait until the callback will be finished
 	// so we don't need to know when to free resources. We'll need
@@ -246,8 +235,6 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 	char *value = NanFromV8String(args[1].As<v8::Object>(),
 	    Nan::UTF8, NULL, NULL, 0, v8::String::NO_OPTIONS);
 
-	fprintf(stderr, "In WTTable::Put(%s, %s)\n", key, value);
-
 	// TODO: Free this memory.
 	// Get setup to call the WiredTiger async operation.
 	ASYNC_OP_COOKIE *cookie =
@@ -258,6 +245,8 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 	// Make sure callback isn't garbage collected.
 	cookie->javaCallback = Persistent<Function>::New(callback);
 	cookie->req = req;
+	cookie->argv = new Local<Value>[1];
+	cookie->argc = 1;
 	req->data = cookie;
 	// Setup the WiredTiger async operation
 	WTConnection *wtconn;
@@ -268,15 +257,14 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 		fprintf(stderr, "Async op start failed: %s\n", wiredtiger_strerror(ret));
 	}
 	wtOp->app_data = cookie;
-	fprintf(stderr, "In WTTable::Put(%s, %s)\n", key, value);
 	wtOp->set_key(wtOp, key);
 	wtOp->set_value(wtOp, value);
 	if ((ret = wtOp->insert(wtOp)) != 0) {
+		fprintf(stderr, "WTTable::Put async insert error: %d\n", ret);
 	}
 
-	// Avoid GC
-	//v8::Local<v8::Object> _this = args.This();
-	return v8::Undefined();
+	// TODO: Save "this" into the cookie so it isn't GC'ed
+	return Undefined();
 }
 
 NAN_METHOD(WTTable::Search) {
