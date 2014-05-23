@@ -177,7 +177,8 @@ public:
 	    int argc,
 	    Handle<Value> *argv) :
 	    javaCallback_(javaCallback), savedThis_(savedThis),
-	    key_(key), value_(value), req_(req), argc_(argc), argv_(argv)
+	    key_(key), value_(value), req_(req), argc_(argc), argv_(argv),
+	    searchResult_(NULL)
 	{}
 
 	~AsyncOpData() {
@@ -187,6 +188,8 @@ public:
 		value_.Dispose();
 		uv_close((uv_handle_t *)req_, NULL);
 		delete argv_;
+		if (searchResult_ != NULL)
+			free(searchResult_);
 	}
 
 	Persistent<Function> getJavaCallback() { return javaCallback_; }
@@ -197,9 +200,13 @@ public:
 	int getArgc() { return argc_; }
 	Handle<Value> *getArgv() { return argv_; }
 	int getOpRet() { return opRet_; }
+	char *getSearchResult() { return searchResult_; }
 
 	/* Only some things can be altered after create. */
 	void setOpRet(int opRet) { opRet_ = opRet; }
+	void setSearchResult(char *searchResult) {
+	       	searchResult_ = searchResult;
+       	}
 private:
 	/* Disable default constructor. */
 	AsyncOpData();
@@ -209,10 +216,11 @@ private:
 	Persistent<String> key_;
 	Persistent<String> value_;
 	uv_async_t *req_;
-	int opRet_;
-	/* Setup in WT callback */
 	int argc_;
 	Handle<Value> *argv_;
+	/* Setup in WiredTiger async callback. */
+	int opRet_;
+	char *searchResult_;
 };
 
 static void
@@ -225,6 +233,26 @@ HandleInsertOp(uv_async_t *handle, int status /* unused */) {
 		    "WTTable::Put", wiredtiger_strerror(cookie->getOpRet()));
 	else
 		cookie->getArgv()[0] = Local<Value>::New(Null());
+
+	cookie->getJavaCallback()->Call(Context::GetCurrent()->Global(),
+	    cookie->getArgc(), cookie->getArgv());
+	delete cookie;
+}
+
+static void
+HandleSearchOp(uv_async_t *handle, int status /* unused */) {
+	// This is called in the Java thread, so it can call
+	// the Java callback.
+	AsyncOpData *cookie = static_cast<AsyncOpData *>(handle->data);
+	if (cookie->getOpRet() != 0 || cookie->getSearchResult() == NULL)
+		cookie->getArgv()[0] = node::UVException(0,
+		    "WTTable::Put", wiredtiger_strerror(cookie->getOpRet()));
+	else {
+		fprintf(stderr, "Handling search op\n");
+		cookie->getArgv()[0] = Local<Value>::New(Null());
+		cookie->getArgv()[1] =
+		    String::New(cookie->getSearchResult());
+	}
 	cookie->getJavaCallback()->Call(Context::GetCurrent()->Global(),
 	    cookie->getArgc(), cookie->getArgv());
 	delete cookie;
@@ -234,8 +262,19 @@ static int
 WTAsyncCallbackFunction(
     WT_ASYNC_CALLBACK *cb, WT_ASYNC_OP *op, int ret, uint32_t flags)
 {
+	char *value;
 	//HandleScope scope;
 	AsyncOpData *cookie = (AsyncOpData *)op->app_data;
+	if (op->get_type(op) == WT_AOP_SEARCH) {
+		op->get_value(op, &value);
+		/*
+		 * Can't use v8 Handle/Persistent in this callback, since
+		 * it's not in the main thread - so stash the value in
+		 * the cookie as a non v8 type, until we get to the Java
+		 * callback.
+		 */
+		cookie->setSearchResult(strdup(value));
+	}
 
 	cookie->setOpRet(ret);
 
@@ -300,7 +339,53 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 }
 
 NAN_METHOD(WTTable::Search) {
-	NanScope();
-	NanReturnUndefined();
+	int ret;
+
+	if (args.Length() != 2 ||
+	    !args[0]->IsString() ||
+	    !args[1]->IsFunction())
+		return NanThrowError(
+		    "Search() requires key/value and callback argument");
+
+	wiredtiger::WTTable *table =
+	    node::ObjectWrap::Unwrap<WTTable>(args.This());
+	Handle<Function> callback = Handle<Function>::Cast(args[1]);
+
+	// Get setup to call the WiredTiger async operation.
+	uv_async_t *req =
+	    (uv_async_t *)malloc(sizeof(uv_async_t));
+	uv_async_init(uv_default_loop(), req, HandleSearchOp);
+	AsyncOpData *cookie = new AsyncOpData(
+	    Persistent<Function>::New(callback),
+	    Persistent<Object>::New(args.This()),
+	    Persistent<String>::New(args[0].As<String>()),
+	    Persistent<String>::New(args[0].As<String>()), /* No value for Search */
+	    req,
+	    2,
+	    new Local<Value>[2]);
+	req->data = cookie;
+	// Setup the WiredTiger async operation
+	WTConnection *wtconn;
+	WT_ASYNC_OP *wtOp = NULL;
+	wtconn = table->wtconn();
+	if ((ret = wtconn->conn()->async_new_op(wtconn->conn(),
+	    table->uri(), NULL, &WTAsyncCallback, &wtOp)) != 0) {
+		ThrowException(
+		    Exception::Error(String::Concat(String::New(
+		    "WTTable::Search() WiredTiger async_new_op error"),
+		    String::New(wiredtiger_strerror(ret)))));
+		return Undefined();
+	}
+	wtOp->app_data = cookie;
+	wtOp->set_key(wtOp, *String::Utf8Value(cookie->getKey()));
+	if ((ret = wtOp->search(wtOp)) != 0) {
+		ThrowException(
+		    Exception::Error(String::Concat(String::New(
+		    "WTTable::Search() WiredTiger search error"),
+		    String::New(wiredtiger_strerror(ret)))));
+		return Undefined();
+	}
+
+	return Undefined();
 }
 }
