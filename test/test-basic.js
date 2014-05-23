@@ -17,7 +17,6 @@ conn.Open( function(err) {
 			throw err
 		var inserted = 0;
 		for (var i = 0; i < numPuts; i++) {
-			console.log('About to put');
 			table.Put('abc' + i, 'def', function(err) {
 				if (err)
 					throw err
@@ -31,11 +30,11 @@ conn.Open( function(err) {
 		console.log("Finished puts! Yay!");
 		for (var i = 0; i < numPuts; i++) {
 			console.log('About to get');
-			table.Get('abc' + i, function(err) {
-				if (err)
-					throw err
-				console.log("Got from table");
-			});
+			//table.Search('abc' + i, function(err) {
+			//	if (err)
+			//		throw err
+			//	console.log("Got from table");
+			//});
 		}
 	}
 });

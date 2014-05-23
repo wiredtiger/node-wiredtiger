@@ -185,6 +185,9 @@ HandleInsertOp(uv_async_t *handle, int status /* unused */) {
 	cookie->javaCallback->Call(
 	    Context::GetCurrent()->Global(), cookie->argc, cookie->argv);
 	cookie->javaCallback.Dispose();
+	uv_close((uv_handle_t *)cookie->req, NULL);
+	delete cookie->argv;
+	free(cookie);
 }
 
 static int
@@ -197,20 +200,8 @@ WTAsyncCallbackFunction(
 
 	cookie->op_ret = ret;
 
-	// TODO: How do we pass in parameters to the callback?
 	uv_async_send(cookie->req);
 
-	// Cheat - for now wait until the callback will be finished
-	// so we don't need to know when to free resources. We'll need
-	// to figure out how to hold the argv around too when solving this
-	// for real.
-	//sleep(1);
-	// TODO: Can close_cb be NULL, will this cancel our async_send?
-	// See: https://github.com/joyent/libuv/blob/master/include/uv.h
-	// This is invalid - calling close will cancel the callback, it needs
-	// to be done as part of a finalization or something. How can we
-	// know that the callback has been called in the main thread?
-	//uv_close((uv_handle_t *)cookie->req, NULL);
 	return (0);
 }
 
@@ -235,7 +226,6 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 	char *value = NanFromV8String(args[1].As<v8::Object>(),
 	    Nan::UTF8, NULL, NULL, 0, v8::String::NO_OPTIONS);
 
-	// TODO: Free this memory.
 	// Get setup to call the WiredTiger async operation.
 	ASYNC_OP_COOKIE *cookie =
 	    (ASYNC_OP_COOKIE *)malloc(sizeof(ASYNC_OP_COOKIE));
