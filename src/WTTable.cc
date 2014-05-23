@@ -161,33 +161,73 @@ Handle<Value> WTTable::Open(const Arguments &args) {
 	NanReturnUndefined();
 }
 
-typedef struct {
-	Persistent<Function> javaCallback;
-	uv_async_t *req;
-	int op_ret;
+/*
+ * A container class that is used to store information passed through
+ * the callbacks required to execute a WiredTiger async operation.
+ */
+class AsyncOpData
+{
+public:
+	AsyncOpData(
+	    Persistent<Function> javaCallback,
+	    Persistent<Object> savedThis,
+	    Persistent<String> key,
+	    Persistent<String> value,
+	    uv_async_t *req,
+	    int argc,
+	    Handle<Value> *argv) :
+	    javaCallback_(javaCallback), savedThis_(savedThis),
+	    key_(key), value_(value), req_(req), argc_(argc), argv_(argv)
+	{}
+
+	~AsyncOpData() {
+		javaCallback_.Dispose();
+		savedThis_.Dispose();
+		key_.Dispose();
+		value_.Dispose();
+		uv_close((uv_handle_t *)req_, NULL);
+		delete argv_;
+	}
+
+	Persistent<Function> getJavaCallback() { return javaCallback_; }
+	Persistent<Object> getSavedThis() { return savedThis_; }
+	Persistent<String> getKey() { return key_; }
+	Persistent<String> getValue() { return value_; }
+	uv_async_t *getReq() { return req_; }
+	int getArgc() { return argc_; }
+	Handle<Value> *getArgv() { return argv_; }
+	int getOpRet() { return opRet_; }
+
+	/* Only some things can be altered after create. */
+	void setOpRet(int opRet) { opRet_ = opRet; }
+private:
+	/* Disable default constructor. */
+	AsyncOpData();
+
+	Persistent<Function> javaCallback_;
+	Persistent<Object> savedThis_;
+	Persistent<String> key_;
+	Persistent<String> value_;
+	uv_async_t *req_;
+	int opRet_;
 	/* Setup in WT callback */
-	int argc;
-	Handle<Value> *argv;
-} ASYNC_OP_COOKIE;
+	int argc_;
+	Handle<Value> *argv_;
+};
 
 static void
 HandleInsertOp(uv_async_t *handle, int status /* unused */) {
 	// This is called in the Java thread, so it can call
 	// the Java callback.
-	ASYNC_OP_COOKIE *cookie =
-	    static_cast<ASYNC_OP_COOKIE *>(handle->data);
-
-	if (cookie->op_ret != 0)
-		cookie->argv[0] = node::UVException(
-		    0, "WTTable::Put", wiredtiger_strerror(cookie->op_ret));
+	AsyncOpData *cookie = static_cast<AsyncOpData *>(handle->data);
+	if (cookie->getOpRet() != 0)
+		cookie->getArgv()[0] = node::UVException(0,
+		    "WTTable::Put", wiredtiger_strerror(cookie->getOpRet()));
 	else
-		cookie->argv[0] = Local<Value>::New(Null());
-	cookie->javaCallback->Call(
-	    Context::GetCurrent()->Global(), cookie->argc, cookie->argv);
-	cookie->javaCallback.Dispose();
-	uv_close((uv_handle_t *)cookie->req, NULL);
-	delete cookie->argv;
-	free(cookie);
+		cookie->getArgv()[0] = Local<Value>::New(Null());
+	cookie->getJavaCallback()->Call(Context::GetCurrent()->Global(),
+	    cookie->getArgc(), cookie->getArgv());
+	delete cookie;
 }
 
 static int
@@ -195,12 +235,11 @@ WTAsyncCallbackFunction(
     WT_ASYNC_CALLBACK *cb, WT_ASYNC_OP *op, int ret, uint32_t flags)
 {
 	//HandleScope scope;
-	ASYNC_OP_COOKIE *cookie = (ASYNC_OP_COOKIE *)op->app_data;
+	AsyncOpData *cookie = (AsyncOpData *)op->app_data;
 
+	cookie->setOpRet(ret);
 
-	cookie->op_ret = ret;
-
-	uv_async_send(cookie->req);
+	uv_async_send(cookie->getReq());
 
 	return (0);
 }
@@ -221,22 +260,18 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 	    node::ObjectWrap::Unwrap<WTTable>(args.This());
 	Handle<Function> callback = Handle<Function>::Cast(args[2]);
 
-	char *key = NanFromV8String(args[0].As<v8::Object>(),
-	    Nan::UTF8, NULL, NULL, 0, v8::String::NO_OPTIONS);
-	char *value = NanFromV8String(args[1].As<v8::Object>(),
-	    Nan::UTF8, NULL, NULL, 0, v8::String::NO_OPTIONS);
-
 	// Get setup to call the WiredTiger async operation.
-	ASYNC_OP_COOKIE *cookie =
-	    (ASYNC_OP_COOKIE *)malloc(sizeof(ASYNC_OP_COOKIE));
 	uv_async_t *req =
 	    (uv_async_t *)malloc(sizeof(uv_async_t));
 	uv_async_init(uv_default_loop(), req, HandleInsertOp);
-	// Make sure callback isn't garbage collected.
-	cookie->javaCallback = Persistent<Function>::New(callback);
-	cookie->req = req;
-	cookie->argv = new Local<Value>[1];
-	cookie->argc = 1;
+	AsyncOpData *cookie = new AsyncOpData(
+	    Persistent<Function>::New(callback),
+	    Persistent<Object>::New(args.This()),
+	    Persistent<String>::New(args[0].As<String>()),
+	    Persistent<String>::New(args[1].As<String>()),
+	    req,
+	    1,
+	    new Local<Value>[1]);
 	req->data = cookie;
 	// Setup the WiredTiger async operation
 	WTConnection *wtconn;
@@ -244,16 +279,23 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 	wtconn = table->wtconn();
 	if ((ret = wtconn->conn()->async_new_op(wtconn->conn(),
 	    table->uri(), NULL, &WTAsyncCallback, &wtOp)) != 0) {
-		fprintf(stderr, "Async op start failed: %s\n", wiredtiger_strerror(ret));
+		ThrowException(
+		    Exception::Error(String::Concat(String::New(
+		    "WTTable::Put() WiredTiger async_new_op error"),
+		    String::New(wiredtiger_strerror(ret)))));
+		return Undefined();
 	}
 	wtOp->app_data = cookie;
-	wtOp->set_key(wtOp, key);
-	wtOp->set_value(wtOp, value);
+	wtOp->set_key(wtOp, *String::Utf8Value(cookie->getKey()));
+	wtOp->set_value(wtOp, *String::Utf8Value(cookie->getValue()));
 	if ((ret = wtOp->insert(wtOp)) != 0) {
-		fprintf(stderr, "WTTable::Put async insert error: %d\n", ret);
+		ThrowException(
+		    Exception::Error(String::Concat(String::New(
+		    "WTTable::Put() WiredTiger insert error"),
+		    String::New(wiredtiger_strerror(ret)))));
+		return Undefined();
 	}
 
-	// TODO: Save "this" into the cookie so it isn't GC'ed
 	return Undefined();
 }
 
