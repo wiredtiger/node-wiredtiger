@@ -1,3 +1,10 @@
+/*-
+ * Copyright (c) 2014- WiredTiger, Inc.
+ *	All rights reserved.
+ *
+ * See the file LICENSE for redistribution information.
+ */
+
 #include <node.h>
 #include "wiredtiger.h"
 #include <unistd.h> // For sleep
@@ -29,7 +36,6 @@ const char *WTTable::config() const { return config_; }
 WTConnection * WTTable::wtconn() const { return wtconn_; }
 
 /* Calls from worker threads. */
-
 
 /* V8 exposed functions */
 

@@ -1,3 +1,10 @@
+/*-
+ * Copyright (c) 2014- WiredTiger, Inc.
+ *	All rights reserved.
+ *
+ * See the file LICENSE for redistribution information.
+ */
+
 #include <node.h>
 #include <stdlib.h> // For malloc
 #include "NodeWiredTiger.hpp"

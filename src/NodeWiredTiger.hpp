@@ -1,3 +1,10 @@
+/*-
+ * Copyright (c) 2014- WiredTiger, Inc.
+ *	All rights reserved.
+ *
+ * See the file LICENSE for redistribution information.
+ */
+
 #ifndef NODE_WIREDTIGER_H
 #define NODE_WIREDTIGER_H
 
