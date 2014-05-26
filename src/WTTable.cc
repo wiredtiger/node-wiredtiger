@@ -13,15 +13,19 @@ namespace wiredtiger {
 static v8::Persistent<v8::FunctionTemplate> wttable_constructor;
 static v8::Persistent<v8::String> emit_symbol;
 
-WTTable::WTTable(WTConnection *wtconn, char *uri, char *config)
+WTTable::WTTable(WTConnection *wtconn, const char *uri, const char *config)
     : wtconn_(wtconn), uri_(uri), config_(config) {
 }
 
 WTTable::~WTTable() {
+	if (uri_)
+		free((void *)uri_);
+	if (config_)
+		free((void *)config_);
 }
 
-const char * WTTable::uri() const { return uri_; }
-const char * WTTable::config() const { return config_; }
+const char *WTTable::uri() const { return uri_; }
+const char *WTTable::config() const { return config_; }
 WTConnection * WTTable::wtconn() const { return wtconn_; }
 
 /* Calls from worker threads. */
@@ -47,23 +51,20 @@ void WTTable::Init(Handle<Object> target) {
 Handle<Value> WTTable::New(const Arguments &args) {
 	HandleScope scope;
 
-	char *uri = NULL;
-	char *config = NULL;
-
 	if (args.Length() < 2 || !args[0]->IsObject() || !args[1]->IsString())
-		return NanThrowError(
+		NODE_WT_THROW_EXCEPTION(
 		    "constructor requires connection and uri arguments");
 	WTConnection *wtconn =
 	    node::ObjectWrap::Unwrap<WTConnection>(args[0]->ToObject());
-	uri = NanFromV8String(args[1].As<v8::Object>(),
-	    Nan::UTF8, NULL, NULL, 0, v8::String::NO_OPTIONS);
+	char *uri = strdup(*String::Utf8Value(args[1].As<String>()));
+	char *config = NULL;
 	if (args.Length() == 3) {
 		if (!args[2]->IsString())
-			return NanThrowError(
+			NODE_WT_THROW_EXCEPTION(
 			    "Constructor option must be a string");
-		config = NanFromV8String(args[2].As<v8::Object>(),
-		    Nan::UTF8, NULL, NULL, 0, v8::String::NO_OPTIONS);
+		config = strdup(*String::Utf8Value(args[2].As<String>()));
 	}
+
 
 	WTTable *table = new WTTable(wtconn, uri, config);
 
@@ -71,15 +72,8 @@ Handle<Value> WTTable::New(const Arguments &args) {
 	table->Ref();
 	table->Emit = Persistent<Function>::New(
 	    Local<Function>::Cast(table->handle_->Get(emit_symbol)));
-	// Notify that the table is ready.
-#if 0
-	Handle<Value> eArgs[1] = { String::New("open") };
-	fprintf(stderr, "Calling open event (I hope)\n");
-	//table->Emit->Call(table->handle_, 1, eArgs);
-	node::MakeCallback(args.This(), "emit", 1, eArgs);
-#endif
 
-	return args.This();
+	return scope.Close(args.This());
 }
 
 v8::Handle<v8::Value> WTTable::NewInstance(
@@ -87,14 +81,14 @@ v8::Handle<v8::Value> WTTable::NewInstance(
     v8::Local<v8::String> &uri,
     v8::Local<v8::String> &config) {
 
-	NanScope();
+	HandleScope scope;
 	v8::Local<v8::Object> instance;
 
 	v8::Local<v8::FunctionTemplate> constructorHandle =
 	    NanPersistentToLocal(wttable_constructor);
 
 	if (wtconn.IsEmpty() || uri.IsEmpty())
-		return NanThrowError(
+		NODE_WT_THROW_EXCEPTION(
 		    "constructor requires connection and uri arguments");
 
 	if (config.IsEmpty()) {
@@ -107,7 +101,7 @@ v8::Handle<v8::Value> WTTable::NewInstance(
 		    constructorHandle->GetFunction()->NewInstance(3, argv);
 	}
 
-	return instance;
+	return scope.Close(instance);
 }
 
 /* Called from callback thread. */
@@ -121,7 +115,7 @@ int WTTable::OpenTable() {
 
 	/* If there is no create in the config, nothing more to do. */
 	if (config() == NULL)
-	       return (0);
+		return (0);
 	final_config = std::string(config());
 	if ((create_start = final_config.find("create")) == std::string::npos)
 		return (0);
@@ -147,7 +141,7 @@ Handle<Value> WTTable::Open(const Arguments &args) {
 	    node::ObjectWrap::Unwrap<WTTable>(args.This());
 
 	if (args.Length() != 1)
-		return NanThrowError(
+		NODE_WT_THROW_EXCEPTION(
 		    "WTTable::Open() requires a callback argument");
 	v8::Local<v8::Function> callback = args[0].As<v8::Function>();
 	OpenTableWorker *worker = new OpenTableWorker(
@@ -168,6 +162,7 @@ Handle<Value> WTTable::Open(const Arguments &args) {
 class AsyncOpData
 {
 public:
+	/* Constructor for an insert/update operation. */
 	AsyncOpData(
 	    Persistent<Function> javaCallback,
 	    Persistent<Object> savedThis,
@@ -178,6 +173,19 @@ public:
 	    Handle<Value> *argv) :
 	    javaCallback_(javaCallback), savedThis_(savedThis),
 	    key_(key), value_(value), req_(req), argc_(argc), argv_(argv),
+	    searchResult_(NULL)
+	{}
+
+	/* Constructor for search/remove operation. No value parameter */
+	AsyncOpData(
+	    Persistent<Function> javaCallback,
+	    Persistent<Object> savedThis,
+	    Persistent<String> key,
+	    uv_async_t *req,
+	    int argc,
+	    Handle<Value> *argv) :
+	    javaCallback_(javaCallback), savedThis_(savedThis),
+	    key_(key), req_(req), argc_(argc), argv_(argv),
 	    searchResult_(NULL)
 	{}
 
@@ -248,7 +256,6 @@ HandleSearchOp(uv_async_t *handle, int status /* unused */) {
 		cookie->getArgv()[0] = node::UVException(0,
 		    "WTTable::Put", wiredtiger_strerror(cookie->getOpRet()));
 	else {
-		fprintf(stderr, "Handling search op\n");
 		cookie->getArgv()[0] = Local<Value>::New(Null());
 		cookie->getArgv()[1] =
 		    String::New(cookie->getSearchResult());
@@ -286,13 +293,14 @@ WTAsyncCallbackFunction(
 static WT_ASYNC_CALLBACK WTAsyncCallback = { WTAsyncCallbackFunction };
 
 Handle<Value> WTTable::Put(const Arguments& args) {
+	HandleScope scope;
 	int ret;
 
 	if (args.Length() != 3 ||
 	    !args[0]->IsString() ||
 	    !args[1]->IsString() ||
 	    !args[2]->IsFunction())
-		return NanThrowError(
+		NODE_WT_THROW_EXCEPTION(
 		    "Put() requires key/value and callback argument");
 
 	wiredtiger::WTTable *table =
@@ -316,35 +324,30 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 	WTConnection *wtconn;
 	WT_ASYNC_OP *wtOp = NULL;
 	wtconn = table->wtconn();
-	if ((ret = wtconn->conn()->async_new_op(wtconn->conn(),
-	    table->uri(), NULL, &WTAsyncCallback, &wtOp)) != 0) {
-		ThrowException(
-		    Exception::Error(String::Concat(String::New(
-		    "WTTable::Put() WiredTiger async_new_op error"),
-		    String::New(wiredtiger_strerror(ret)))));
-		return Undefined();
-	}
+	if ((ret = wtconn->conn()->async_new_op(
+	    wtconn->conn(), table->uri(),
+	    NULL, &WTAsyncCallback, &wtOp)) != 0)
+		NODE_WT_THROW_EXCEPTION_WTERR(
+		    "WTTable::Put() WiredTiger async_new_op error: ", ret);
 	wtOp->app_data = cookie;
 	wtOp->set_key(wtOp, *String::Utf8Value(cookie->getKey()));
 	wtOp->set_value(wtOp, *String::Utf8Value(cookie->getValue()));
-	if ((ret = wtOp->insert(wtOp)) != 0) {
-		ThrowException(
-		    Exception::Error(String::Concat(String::New(
-		    "WTTable::Put() WiredTiger insert error"),
-		    String::New(wiredtiger_strerror(ret)))));
-		return Undefined();
-	}
+	if ((ret = wtOp->insert(wtOp)) != 0)
+		NODE_WT_THROW_EXCEPTION_WTERR(
+		    "WTTable::Put() WiredTiger insert error: ", ret);
 
-	return Undefined();
+	return scope.Close(Undefined());
 }
 
-NAN_METHOD(WTTable::Search) {
+Handle<Value> WTTable::Search(const Arguments& args) {
+	HandleScope scope;
+
 	int ret;
 
 	if (args.Length() != 2 ||
 	    !args[0]->IsString() ||
 	    !args[1]->IsFunction())
-		return NanThrowError(
+		NODE_WT_THROW_EXCEPTION(
 		    "Search() requires key/value and callback argument");
 
 	wiredtiger::WTTable *table =
@@ -359,7 +362,6 @@ NAN_METHOD(WTTable::Search) {
 	    Persistent<Function>::New(callback),
 	    Persistent<Object>::New(args.This()),
 	    Persistent<String>::New(args[0].As<String>()),
-	    Persistent<String>::New(args[0].As<String>()), /* No value for Search */
 	    req,
 	    2,
 	    new Local<Value>[2]);
@@ -368,8 +370,9 @@ NAN_METHOD(WTTable::Search) {
 	WTConnection *wtconn;
 	WT_ASYNC_OP *wtOp = NULL;
 	wtconn = table->wtconn();
-	if ((ret = wtconn->conn()->async_new_op(wtconn->conn(),
-	    table->uri(), NULL, &WTAsyncCallback, &wtOp)) != 0) {
+	if ((ret = wtconn->conn()->async_new_op(
+	    wtconn->conn(), table->uri(),
+	    NULL, &WTAsyncCallback, &wtOp)) != 0) {
 		ThrowException(
 		    Exception::Error(String::Concat(String::New(
 		    "WTTable::Search() WiredTiger async_new_op error"),
@@ -386,6 +389,6 @@ NAN_METHOD(WTTable::Search) {
 		return Undefined();
 	}
 
-	return Undefined();
+	return scope.Close(Undefined());
 }
 }

@@ -27,21 +27,22 @@ int WTConnection::OpenConnection(const char *home, const char *config) {
 }
 
 /* V8 exposed functions */
-NAN_METHOD(WiredTiger) {
-	NanScope();
+Handle<Value> WiredTiger(const Arguments& args) {
+	HandleScope scope;
 
 	v8::Local<v8::String> home;
 	v8::Local<v8::String> config;
 	if (args.Length() < 2 || args.Length() > 3 || !args[0]->IsString())
-		return NanThrowError("Constructor requires a home argument");
+		NODE_WT_THROW_EXCEPTION(
+		    "Constructor requires a home argument");
 	home = args[0].As<v8::String>();
 	if (args.Length() == 2) {
 		if (!args[1]->IsString())
-			return NanThrowError(
+			NODE_WT_THROW_EXCEPTION(
 			    "Constructor option must be a string");
 		config = args[1].As<v8::String>();
 	}
-	NanReturnValue(WTConnection::NewInstance(home, config));
+	return scope.Close(WTConnection::NewInstance(home, config));
 }
 
 void WTConnection::Init(Handle<Object> target) {
@@ -64,12 +65,13 @@ Handle<Value> WTConnection::New(const Arguments &args) {
 	char *home = NULL;
 	char *config = NULL;
 	if (args.Length() == 0 || !args[0]->IsString())
-		return NanThrowError("constructor requires a home argument");
+		NODE_WT_THROW_EXCEPTION(
+		    "constructor requires a home argument");
 	home = NanFromV8String(args[0].As<v8::Object>(),
 	    Nan::UTF8, NULL, NULL, 0, v8::String::NO_OPTIONS);
 	if (args.Length() == 2) {
 		if (!args[1]->IsString())
-			return NanThrowError(
+			NODE_WT_THROW_EXCEPTION(
 			    "Constructor option must be a string");
 		config = NanFromV8String(args[1].As<v8::Object>(),
 		    Nan::UTF8, NULL, NULL, 0, v8::String::NO_OPTIONS);
@@ -85,14 +87,14 @@ Handle<Value> WTConnection::New(const Arguments &args) {
 v8::Handle<v8::Value> WTConnection::NewInstance(
     v8::Local<v8::String> &home, v8::Local<v8::String> &config) {
 
-	NanScope();
+	HandleScope scope();
 	v8::Local<v8::Object> instance;
 
 	v8::Local<v8::FunctionTemplate> constructorHandle =
 	    NanPersistentToLocal(wtconnection_constructor);
 
 	if (home.IsEmpty())
-		return NanThrowError("constructor requires home argument");
+		NODE_WT_THROW_EXCEPTION("constructor requires home argument");
 
 	if (config.IsEmpty()) {
 		v8::Handle<v8::Value> argv[] = { home };
@@ -106,10 +108,11 @@ v8::Handle<v8::Value> WTConnection::NewInstance(
 	return instance;
 }
 
-NAN_METHOD(WTConnection::Open) {
-	NanScope();
+Handle<Value> WTConnection::Open(const Arguments& args) {
+	HandleScope scope();
 	if (args.Length() == 0 || !args[0]->IsFunction())
-		return NanThrowError("Open() requires a callback argument");
+		NODE_WT_THROW_EXCEPTION(
+		    "Open() requires a callback argument");
 	wiredtiger::WTConnection *conn =
 	    node::ObjectWrap::Unwrap<wiredtiger::WTConnection>(args.This());
 	v8::Local<v8::Function> callback = args[0].As<v8::Function>();
@@ -123,41 +126,4 @@ NAN_METHOD(WTConnection::Open) {
 	NanAsyncQueueWorker(worker);
 	NanReturnUndefined();
 }
-
-#if 0
-NAN_METHOD(WTConnection::OpenTable) {
-	NanScope();
-	if (args.Length() < 2 || !args[0]->IsString())
-		return NanThrowError(
-		    "Open() requires a uri and a callback argument");
-	if (args.Length() == 3 &&
-	    (!args[1]->IsString() || !args[2]->IsFunction()))
-		return NanThrowError("Open() invalid config argument");
-
-	/* Extract the arguments */
-	char *uri = NanFromV8String(args[0].As<v8::Object>(),
-	    Nan::UTF8, NULL, NULL, 0, v8::String::NO_OPTIONS);
-	char *config = NULL;
-	v8::Local<v8::Function> callback;
-	if (args.Length() == 3) {
-		config = NanFromV8String(args[1].As<v8::Object>(),
-		    Nan::UTF8, NULL, NULL, 0, v8::String::NO_OPTIONS);
-		callback = args[2].As<v8::Function>();
-	} else
-		callback = args[1].As<v8::Function>();
-
-	/* Retrieve our WTConnection handle. */
-	wiredtiger::WTConnection *conn =
-	    node::ObjectWrap::Unwrap<wiredtiger::WTConnection>(args.This());
-
-	OpenTableWorker *worker = new OpenTableWorker(
-	    conn, new NanCallback(callback), uri, config);
-
-	// Avoid GC
-	v8::Local<v8::Object> _this = args.This();
-	worker->SavePersistent("connection", _this);
-	NanAsyncQueueWorker(worker);
-	NanReturnUndefined();
-}
-#endif
 }

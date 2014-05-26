@@ -7,7 +7,7 @@
 
 namespace wiredtiger {
 
-NAN_METHOD(WiredTiger);
+	v8::Handle<v8::Value> WiredTiger(const v8::Arguments& args);
 
 class WTConnection : public node::ObjectWrap {
 public:
@@ -24,11 +24,11 @@ public:
 	WT_CONNECTION *conn() const;
 
 private:
-	static NAN_METHOD(New);
-	static NAN_METHOD(OpenTable);
-	static NAN_METHOD(Open);
-	static NAN_METHOD(Put);
-	static NAN_METHOD(Search);
+	static v8::Handle<v8::Value> New(const v8::Arguments& args);
+	static v8::Handle<v8::Value> OpenTable(const v8::Arguments& args);
+	static v8::Handle<v8::Value> Open(const v8::Arguments& args);
+	static v8::Handle<v8::Value> Put(const v8::Arguments& args);
+	static v8::Handle<v8::Value> Search(const v8::Arguments& args);
 
 	char *home_;
 	char *config_;
@@ -43,7 +43,7 @@ public:
 	    v8::Local<v8::String> &uri,
 	    v8::Local<v8::String> &config);
 
-	WTTable(WTConnection *wtconn, char *home, char *config);
+	WTTable(WTConnection *wtconn, const char *uri, const char *config);
 	~WTTable();
 
 	int OpenTable();
@@ -53,14 +53,14 @@ public:
 	const char *config() const;
 
 private:
-	static NAN_METHOD(New);
-	static NAN_METHOD(Open);
-	static NAN_METHOD(Put);
-	static NAN_METHOD(Search);
+	static v8::Handle<v8::Value> New(const v8::Arguments& args);
+	static v8::Handle<v8::Value> Open(const v8::Arguments& args);
+	static v8::Handle<v8::Value> Put(const v8::Arguments& args);
+	static v8::Handle<v8::Value> Search(const v8::Arguments& args);
 
 	WTConnection *wtconn_;
-	char *uri_;
-	char *config_;
+	const char *uri_;
+	const char *config_;
 };
 
 class ConnectionWorker : public NanAsyncWorker {
@@ -92,6 +92,22 @@ public:
 private:
 	WTTable *table_;
 };
-} // namespace wiredtiger
 
+#define	NODE_WT_THROW_EXCEPTION_WTERR(msg, err)	do {			\
+	HandleScope scope;						\
+	v8::ThrowException(						\
+	    v8::Exception::Error(v8::String::Concat(			\
+	    v8::String::New(msg),					\
+	    v8::String::New(wiredtiger_strerror(ret)))));		\
+	return Undefined();						\
+	} while (0)
+
+#define	NODE_WT_THROW_EXCEPTION(msg)	do {				\
+	HandleScope scope;						\
+	v8::ThrowException(						\
+	    v8::Exception::Error(v8::String::New(msg)));		\
+	return Undefined();						\
+	} while (0)
+
+} // namespace wiredtiger
 #endif

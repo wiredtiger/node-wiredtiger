@@ -1,10 +1,10 @@
 var wiredtiger = require('../'),
      _ = require('underscore');
 
-const numPuts = 5;
+const numPuts = 5000;
 
 var conn = new wiredtiger.WTConnection(
-    '/tmp/test', 'create,async=(enabled=true)');
+    '/tmp/test', 'create,async=(enabled=true,ops_max=4096)');
 conn.Open( function(err) {
 	if (err)
 		throw err
@@ -22,7 +22,7 @@ conn.Open( function(err) {
 				if (err)
 					throw err
 				didPut();
-				console.log("Put into table");
+				//console.log("Put into table");
 			});
 		}
 	});
@@ -30,11 +30,11 @@ conn.Open( function(err) {
 	function afterPuts() {
 		console.log("Finished puts! Yay!");
 		for (var i = 0; i < numPuts; i++) {
-			console.log('About to get');
+			//console.log('About to get');
 			table.Search('abc' + i, function(err, result) {
 				if (err)
 					throw err
-				console.log("Got from table " + result);
+				//console.log("Got from table " + result);
 				didGet();
 			});
 		}
