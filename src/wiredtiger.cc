@@ -12,8 +12,6 @@ void InitAll(Handle<Object> target) {
 	HandleScope scope;
 	wiredtiger::WTConnection::Init(target);
 	wiredtiger::WTTable::Init(target);
-	//Local<Function> wiredtiger = FunctionTemplate::New(WiredTiger)->GetFunction();
-	//target->Set(String::NewSymbol("wiredtiger"), wiredtiger);
 }
 
 NODE_MODULE(wiredtiger, InitAll)

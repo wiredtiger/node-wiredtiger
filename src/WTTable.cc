@@ -10,8 +10,8 @@ using namespace v8;
 
 namespace wiredtiger {
 
-static v8::Persistent<v8::FunctionTemplate> wttable_constructor;
-static v8::Persistent<v8::String> emit_symbol;
+static Persistent<FunctionTemplate> wttable_constructor;
+static Persistent<String> emit_symbol;
 
 WTTable::WTTable(WTConnection *wtconn, const char *uri, const char *config)
     : wtconn_(wtconn), uri_(uri), config_(config) {
@@ -76,27 +76,28 @@ Handle<Value> WTTable::New(const Arguments &args) {
 	return scope.Close(args.This());
 }
 
-v8::Handle<v8::Value> WTTable::NewInstance(
-    v8::Local<v8::Object> &wtconn,
-    v8::Local<v8::String> &uri,
-    v8::Local<v8::String> &config) {
+Handle<Value> WTTable::NewInstance(
+    Local<Object> &wtconn,
+    Local<String> &uri,
+    Local<String> &config) {
 
 	HandleScope scope;
-	v8::Local<v8::Object> instance;
+	Local<Object> instance;
 
-	v8::Local<v8::FunctionTemplate> constructorHandle =
-	    NanPersistentToLocal(wttable_constructor);
+	/* Copy into a local scope handle. */
+	Local<FunctionTemplate> constructorHandle =
+	    Local<FunctionTemplate>::New(wttable_constructor);
 
 	if (wtconn.IsEmpty() || uri.IsEmpty())
 		NODE_WT_THROW_EXCEPTION(
 		    "constructor requires connection and uri arguments");
 
 	if (config.IsEmpty()) {
-		v8::Handle<v8::Value> argv[] = { wtconn, uri };
+		Handle<Value> argv[] = { wtconn, uri };
 		instance =
 		    constructorHandle->GetFunction()->NewInstance(2, argv);
 	} else {
-		v8::Handle<v8::Value> argv[] = { wtconn, uri, config };
+		Handle<Value> argv[] = { wtconn, uri, config };
 		instance =
 		    constructorHandle->GetFunction()->NewInstance(3, argv);
 	}
@@ -143,16 +144,16 @@ Handle<Value> WTTable::Open(const Arguments &args) {
 	if (args.Length() != 1)
 		NODE_WT_THROW_EXCEPTION(
 		    "WTTable::Open() requires a callback argument");
-	v8::Local<v8::Function> callback = args[0].As<v8::Function>();
+	Local<Function> callback = args[0].As<Function>();
 	OpenTableWorker *worker = new OpenTableWorker(
 	    table,
 	    new NanCallback(callback));
 
 	// Avoid GC
-	v8::Local<v8::Object> _this = args.This();
+	Local<Object> _this = args.This();
 	worker->SavePersistent("table", _this);
 	NanAsyncQueueWorker(worker);
-	NanReturnUndefined();
+	return scope.Close(Undefined());
 }
 
 /*
