@@ -1,12 +1,16 @@
 var wiredtiger = require('../'),
+     crypto = require('crypto'),
+     du = require('du'),
+     randomString = require('randomstring'),
      _ = require('underscore');
 
-const concurrency = 50;
-const numPuts = 500000;
+const concurrency = 10;
+const numPuts = 1000000;
 const numPutsPerThread = numPuts / concurrency;
+var startTime;
 
 var conn = new wiredtiger.WTConnection(
-    '/tmp/test', 'create,async=(enabled=true,ops_max=4096)');
+    '/tmp/test', 'create,async=(enabled=true,ops_max=4096),extensions=[lib/libwiredtiger_zlib.so,lib/libwiredtiger_bzip2.so,lib/libwiredtiger_snappy.so]');
 conn.Open( function(err) {
 	if (err)
 		throw err
@@ -16,22 +20,33 @@ conn.Open( function(err) {
 	var totalWrites = 0;
 	var totalSearches = 0;
 	var table = new wiredtiger.WTTable(
-	    conn, 'table:test', 'create,key_format=S,value_format=S');
+	    conn, 'table:test', 'create,key_format=S,value_format=S,block_compressor=snappy');
+	//var data = crypto.pseudoRandomBytes(100)
 
 	function doPut (threadNum, itemNum) {
-		if (totalWrites == numPuts) {
-			console.log("Finished " + numPuts + " writes");
+		if (totalWrites++ == numPuts) {
+			console.log("Finished " + numPuts + " puts in: " +
+			    Math.floor((Date.now() - startTime) / 1000) + 's');
+			du('/tmp/test', function(err, size) {
+				if (err)
+					throw err
+				console.log("Database size: " +
+				    Math.floor(size / 1024 / 1024) + "M");
+			});
 			return
 		}
+		if (totalWrites % 100000 === 0)
+			console.log("Finished " + totalWrites + " puts in: " +
+			    Math.floor((Date.now() - startTime) / 1000) + 's');
 		if (itemNum >= numPutsPerThread)
 			return
 		var keyOffset = (threadNum * numPutsPerThread) + itemNum;
-		table.Put('abc' + keyOffset, 'def' + keyOffset, function(err) {
+		var data = randomString.generate(100);
+		table.Put('abc' + keyOffset, data, function(err) {
 			if (err)
 				throw err
 			//console.log('Did put: ' + threadNum + ':' + itemNum);
 			didPut();
-			totalWrites++;
 			itemNum++;
 			process.nextTick(function() {
 				doPut(threadNum, itemNum) })
@@ -40,6 +55,7 @@ conn.Open( function(err) {
 	table.Open( function(err) {
 		if (err)
 			throw err
+		startTime = Date.now()
 		for (var i = 0; i < concurrency; i++)
 			doPut(i, 0);
 	});

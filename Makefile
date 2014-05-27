@@ -9,7 +9,7 @@ clean:
 
 config:
 	mkdir -p $(WT_BUILD)
-	(TOP=`pwd` && cd $(WT_BUILD) && env CFLAGS="-fPIC" ./configure --prefix=$$TOP --disable-shared)
+	(TOP=`pwd` && cd $(WT_BUILD) && env CFLAGS="-fPIC" ./configure --enable-snappy --enable-bzip2 --enable-zlib --prefix=$$TOP)
 	node-gyp configure -d
 
 build_wt:

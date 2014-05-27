@@ -305,7 +305,7 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 
 	if (args.Length() != 3 ||
 	    !args[0]->IsString() ||
-	    !args[1]->IsString() ||
+	    //!args[1]->IsString() ||
 	    !args[2]->IsFunction())
 		NODE_WT_THROW_EXCEPTION(
 		    "Put() requires key/value and callback argument");
