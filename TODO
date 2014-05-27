@@ -1,6 +1,5 @@
 Last updated by Alexander Gorrod 23 May 2014. Probably out of date:
 
-* Implement Connection close on shutdown
 * Run test cases with Valgrind to ensure memory isn't leaking
 * Implement an iterator API via the C++ extension
 * Expose the iterator API as a Node stream (http://nodejs.org/api/stream.html)
