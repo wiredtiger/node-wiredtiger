@@ -1,47 +1,72 @@
 var wiredtiger = require('../'),
      crypto = require('crypto'),
      du = require('du'),
+     fs = require('fs'),
+     argv = require('optimist').argv,
+     options = {
+	 compression	: argv.compression	|| "zlib",
+	 db		: argv.db		|| "/tmp/test",
+	 numGets	: argv.numGets		|| 1000000,
+	 numPuts	: argv.numPuts		|| 1000000,
+	 getConcurrency	: argv.getConcurrency	|| 4,
+	 putConcurrency	: argv.putConcurrency	|| 4,
+	 valueSize	: argv.valueSize	|| 100
+     },
      randomString = require('randomstring'),
      _ = require('underscore');
 
-const concurrency = 10;
-const numPuts = 1000000;
-const numPutsPerThread = numPuts / concurrency;
+// Verify the command line options are OK.
+if (options.compression != "zlib" && options.compression != "snappy" &&
+    options.compression != "bzip2" && options.compression != "none") {
+	console.error("Invalid compression engine: %s", options.compression);
+	return
+}
+
+if (!fs.existsSync(options.db)) {
+	console.error("Database directory %s must exist", options.db);
+	return
+}
+
+// Setup some global variables.
+const numPutsPerThread = options.numPuts / options.putConcurrency;
+const numGetsPerThread = options.numGets / options.getConcurrency;
 var startTime;
+var queryStartTime;
+
+function logProgress(start, optype, ops) {
+	du(options.db, function(err, size) {
+		if (err)
+			throw err
+		console.log("%s %s in %d s, db size %d MB",
+		    ops, optype,
+		    Math.floor((Date.now() - start) / 1000),
+		    Math.floor(size / 1024 / 1024));
+	});
+}
 
 var conn = new wiredtiger.WTConnection(
-    '/tmp/test', 'create,async=(enabled=true,ops_max=4096),extensions=[lib/libwiredtiger_zlib.so,lib/libwiredtiger_bzip2.so,lib/libwiredtiger_snappy.so]');
+    options.db, 'create,async=(enabled=true,ops_max=4096),extensions=[lib/libwiredtiger_zlib.so,lib/libwiredtiger_bzip2.so,lib/libwiredtiger_snappy.so]');
 conn.Open( function(err) {
 	if (err)
 		throw err
 
-	var didPut = _.after(numPuts, afterPuts);
-	var didGet = _.after(numPuts, afterGets);
+	var didPut = _.after(options.numPuts, afterPuts);
+	var didGet = _.after(options.numGets, afterGets);
 	var totalWrites = 0;
 	var totalSearches = 0;
-	var table = new wiredtiger.WTTable(
-	    conn, 'table:test', 'create,key_format=S,value_format=S,block_compressor=snappy');
-	//var data = crypto.pseudoRandomBytes(100)
+	var configString = "create,key_format=S,value_format=S";
+	if (options.compression != "none")
+		configString += ",block_compressor=" + options.compression;
+	var table = new wiredtiger.WTTable(conn, 'table:test', configString);
 
 	function doPut (threadNum, itemNum) {
-		if (totalWrites++ == numPuts) {
-			console.log("Finished " + numPuts + " puts in: " +
-			    Math.floor((Date.now() - startTime) / 1000) + 's');
-			du('/tmp/test', function(err, size) {
-				if (err)
-					throw err
-				console.log("Database size: " +
-				    Math.floor(size / 1024 / 1024) + "M");
-			});
+		if (totalWrites++ % 100000 === 0)
+			logProgress(startTime, "puts", totalWrites);
+		if (itemNum == numPutsPerThread)
 			return
-		}
-		if (totalWrites % 100000 === 0)
-			console.log("Finished " + totalWrites + " puts in: " +
-			    Math.floor((Date.now() - startTime) / 1000) + 's');
-		if (itemNum >= numPutsPerThread)
-			return
-		var keyOffset = (threadNum * numPutsPerThread) + itemNum;
-		var data = randomString.generate(100);
+		var keyOffset =
+       		    (threadNum * options.numPutsPerThread) + itemNum;
+		var data = randomString.generate(options.valueSize);
 		table.Put('abc' + keyOffset, data, function(err) {
 			if (err)
 				throw err
@@ -56,24 +81,23 @@ conn.Open( function(err) {
 		if (err)
 			throw err
 		startTime = Date.now()
-		for (var i = 0; i < concurrency; i++)
+		for (var i = 0; i < options.putConcurrency; i++)
 			doPut(i, 0);
 	});
 
 	function doGet (threadNum, itemNum) {
-		if (totalSearches++ == numPuts) {
-			console.log("Finished " + numPuts + " searches");
+		if (totalSearches++ % 100000 === 0)
+			logProgress(queryStartTime, "searches", totalSearches);
+		if (itemNum == numGetsPerThread)
 			return
-		}
-		if (itemNum >= numPutsPerThread)
-			return
-		var keyOffset = (threadNum * numPutsPerThread) + itemNum;
+		var keyOffset =
+	       	    (threadNum * options.numGetsPerThread) + itemNum;
+		keyOffset = keyOffset % options.numPuts;
 		table.Search('abc' + keyOffset, function(err, result) {
 			if (err)
 				throw err
 			//console.log('Did put: ' + threadNum + ':' + itemNum);
 			didGet();
-			totalSearches++;
 			itemNum++;
 			process.nextTick(function() {
 				doGet(threadNum, itemNum) })
@@ -81,13 +105,14 @@ conn.Open( function(err) {
 	}
 	function afterPuts() {
 		console.log("Finished puts! Yay!");
-		for (var i = 0; i < concurrency; i++) {
+		queryStartTime = Date.now()
+		for (var i = 0; i < options.getConcurrency; i++) {
 			doGet(i, 0);
 		}
 	}
 });
 
 function afterGets() {
-	console.log("Retrieved " + numPuts + " items");
+	console.log("Retrieved " + options.numGets + " items");
 }
 
