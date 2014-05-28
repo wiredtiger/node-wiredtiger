@@ -33,6 +33,12 @@ const numGetsPerThread = options.numGets / options.getConcurrency;
 var startTime;
 var queryStartTime;
 
+var stringOptions = JSON.stringify(options);
+var parsedOptions = JSON.parse(stringOptions);
+console.log(parsedOptions.numGets);
+console.log(JSON.stringify(parsedOptions, null, " "));
+console.log(options);
+
 function logProgress(start, optype, ops) {
 	du(options.db, function(err, size) {
 		if (err)
@@ -44,8 +50,7 @@ function logProgress(start, optype, ops) {
 	});
 }
 
-var conn = new wiredtiger.WTConnection(
-    options.db, 'create,async=(enabled=true,ops_max=4096),extensions=[lib/libwiredtiger_zlib.so,lib/libwiredtiger_bzip2.so,lib/libwiredtiger_snappy.so]');
+var conn = new wiredtiger.WTConnection(options.db, 'create');
 conn.Open( function(err) {
 	if (err)
 		throw err
@@ -54,7 +59,7 @@ conn.Open( function(err) {
 	var didGet = _.after(options.numGets, afterGets);
 	var totalWrites = 0;
 	var totalSearches = 0;
-	var configString = "create,key_format=S,value_format=S";
+	var configString = "create";
 	if (options.compression != "none")
 		configString += ",block_compressor=" + options.compression;
 	var table = new wiredtiger.WTTable(conn, 'table:test', configString);

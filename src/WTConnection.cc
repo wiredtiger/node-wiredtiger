@@ -15,7 +15,8 @@ namespace wiredtiger {
 
 static Persistent<FunctionTemplate> wtconnection_constructor;
 
-WTConnection::WTConnection(char *home, char *config) : home_(home), config_(config) {
+WTConnection::WTConnection(char *home, char *config) :
+    home_(home), config_(config) {
 	conn_ = NULL;
 }
 
@@ -77,15 +78,20 @@ Handle<Value> WTConnection::New(const Arguments &args) {
 	if (args.Length() == 0 || !args[0]->IsString())
 		NODE_WT_THROW_EXCEPTION(
 		    "constructor requires a home argument");
+	Local<String> appConfig = String::New(
+	    "async=(enabled=true,threads=10,ops_max=4096),"
+	    "extensions=[lib/libwiredtiger_zlib.so,"
+	    "lib/libwiredtiger_bzip2.so,lib/libwiredtiger_snappy.so],");
 	char *home = strdup(*String::Utf8Value(args[0].As<String>()));
-	char *config = NULL;
 	if (args.Length() == 2) {
 		if (!args[1]->IsString())
 			NODE_WT_THROW_EXCEPTION(
 			    "Constructor option must be a string");
-		config = strdup(*String::Utf8Value(args[1].As<String>()));
+		appConfig = String::Concat(
+		    appConfig, args[1].As<String>());
 	}
 
+	char *config = strdup(*String::Utf8Value(appConfig));
 	WTConnection *conn = new WTConnection(home, config);
 	conn->Wrap(args.This());
 	conn->Ref();

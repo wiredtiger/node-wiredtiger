@@ -130,6 +130,8 @@ int WTTable::OpenTable() {
 	/* There was a "create" - strip it from the original. */
 	final_config = final_config.erase(create_start, 6);
 
+	final_config += std::string(",key_format=S,value_format=S");
+
 	conn = wtconn()->conn();
 	fprintf(stderr, "Creating table: %s, %s\n",
 	    uri(), final_config.c_str());
@@ -278,7 +280,7 @@ WTAsyncCallbackFunction(
 {
 	char *value;
 	//HandleScope scope;
-	AsyncOpData *cookie = (AsyncOpData *)op->app_data;
+	AsyncOpData *cookie = (AsyncOpData *)op->async_app_private;
 	if (op->get_type(op) == WT_AOP_SEARCH) {
 		op->get_value(op, &value);
 		/*
@@ -336,7 +338,7 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 	    NULL, &WTAsyncCallback, &wtOp)) != 0)
 		NODE_WT_THROW_EXCEPTION_WTERR(
 		    "WTTable::Put() WiredTiger async_new_op error: ", ret);
-	wtOp->app_data = cookie;
+	wtOp->async_app_private = cookie;
 	wtOp->set_key(wtOp, *String::Utf8Value(cookie->getKey()));
 	wtOp->set_value(wtOp, *String::Utf8Value(cookie->getValue()));
 	if ((ret = wtOp->insert(wtOp)) != 0)
@@ -386,7 +388,7 @@ Handle<Value> WTTable::Search(const Arguments& args) {
 		    String::New(wiredtiger_strerror(ret)))));
 		return Undefined();
 	}
-	wtOp->app_data = cookie;
+	wtOp->async_app_private = cookie;
 	wtOp->set_key(wtOp, *String::Utf8Value(cookie->getKey()));
 	if ((ret = wtOp->search(wtOp)) != 0) {
 		ThrowException(
