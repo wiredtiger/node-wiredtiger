@@ -301,6 +301,38 @@ WTAsyncCallbackFunction(
 
 static WT_ASYNC_CALLBACK WTAsyncCallback = { WTAsyncCallbackFunction };
 
+/*
+ * Following are functions that use the WiredTiger async API. Their
+ * life cycle deserves some description. Here it is:
+ * * A user application calls one of the methods on a table handle (e.g.
+ *   table.Put("key", "value", putCallback);
+ * * That call makes its way to WTTable::Put. The put implementation:
+ *   - Parses incoming parameters, and makes copies in a cookie.
+ *   - Creates a Node uv_async_request object that can be used to interact
+ *     with the main Node event loop. The async_request is given a callback
+ *     function that is implemented in this file, and specific to the
+ *     particular operation. Named HandleXXXOp. Saves the object into the
+ *     cookie.
+ *   - Creates a WiredTiger async operation handle and attaches the cookie
+ *     to it.
+ *   - Start a WiredTiger async operation, passing a generic callback that
+ *     is implemented in WTAsyncCallbackFunction.
+ * * When the WiredTiger async operation completes, it will call the
+ *   WTAsyncCallbackFunction, with a cookie attached. This function:
+ *   - Retrieves the cookie, and calls uv_async_send, which wakes the Node
+ *     event loop, and triggers a callback into HandleXXXOp from the (single)
+ *     Node thread.
+ * * HandleXXXOp retrieves the cookie, decodes any values that need to be
+ *   decoded (this needs to happen here - since it needs to be done in the
+ *   main Node thread). Then calls the JavaScript applications callback.
+ *
+ *   A solid example for a table.Put:
+ *   JavaScript:	table.Put("key", "value", putCallback) ->
+ *   C++:		  WTTable::Put() returns to Node and starts async op
+ *   C++:		  WTAsyncCallbackFunction -> In a WiredTiger thread
+ *   C++:		    HandleInsertOp -> In the Node thread
+ *   JavaScript:	      putCallback() In the users code
+ */
 Handle<Value> WTTable::Put(const Arguments& args) {
 	HandleScope scope;
 	int ret;
