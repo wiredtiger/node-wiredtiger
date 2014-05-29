@@ -3,8 +3,6 @@ Last updated by Alexander Gorrod 23 May 2014. Probably out of date:
 * Run test cases with Valgrind to ensure memory isn't leaking
 * Implement an iterator API via the C++ extension
 * Expose the iterator API as a Node stream (http://nodejs.org/api/stream.html)
-* Document how the WiredTiger async callbacks tie into the Node/UV world view.
-  It's not very standard.
 * Move away from the Nan module - it doesn't help our code style.
 * Add ability to rate throttle operations. At the moment it's trivial to
   overrun the WiredTiger async operation count max (4096).
