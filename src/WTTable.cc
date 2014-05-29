@@ -179,7 +179,7 @@ public:
 	    Persistent<String> value,
 	    uv_async_t *req,
 	    int argc,
-	    Handle<Value> *argv) :
+	    Persistent<Value> *argv) :
 	    javaCallback_(javaCallback), savedThis_(savedThis),
 	    key_(key), value_(value), req_(req), argc_(argc), argv_(argv),
 	    searchResult_(NULL)
@@ -192,7 +192,7 @@ public:
 	    Persistent<String> key,
 	    uv_async_t *req,
 	    int argc,
-	    Handle<Value> *argv) :
+	    Persistent<Value> *argv) :
 	    javaCallback_(javaCallback), savedThis_(savedThis),
 	    key_(key), req_(req), argc_(argc), argv_(argv),
 	    searchResult_(NULL)
@@ -204,7 +204,9 @@ public:
 		key_.Dispose();
 		value_.Dispose();
 		uv_close((uv_handle_t *)req_, NULL);
-		delete argv_;
+		for (int i = 0; i < argc_; i++)
+			argv_[i].Dispose();
+		delete []argv_;
 		if (searchResult_ != NULL)
 			free(searchResult_);
 	}
@@ -234,7 +236,7 @@ private:
 	Persistent<String> value_;
 	uv_async_t *req_;
 	int argc_;
-	Handle<Value> *argv_;
+	Persistent<Value> *argv_;
 	/* Setup in WiredTiger async callback. */
 	int opRet_;
 	char *searchResult_;
@@ -249,7 +251,7 @@ HandleInsertOp(uv_async_t *handle, int status /* unused */) {
 		cookie->getArgv()[0] = node::UVException(0,
 		    "WTTable::Put", wiredtiger_strerror(cookie->getOpRet()));
 	else
-		cookie->getArgv()[0] = Local<Value>::New(Null());
+		cookie->getArgv()[0] = Persistent<Value>::New(Null());
 
 	cookie->getJavaCallback()->Call(Context::GetCurrent()->Global(),
 	    cookie->getArgc(), cookie->getArgv());
@@ -265,9 +267,9 @@ HandleSearchOp(uv_async_t *handle, int status /* unused */) {
 		cookie->getArgv()[0] = node::UVException(0,
 		    "WTTable::Put", wiredtiger_strerror(cookie->getOpRet()));
 	else {
-		cookie->getArgv()[0] = Local<Value>::New(Null());
-		cookie->getArgv()[1] =
-		    String::New(cookie->getSearchResult());
+		cookie->getArgv()[0] = Persistent<Value>::New(Null());
+		cookie->getArgv()[1] = Persistent<String>::New(
+		    String::New(cookie->getSearchResult()));
 	}
 	cookie->getJavaCallback()->Call(Context::GetCurrent()->Global(),
 	    cookie->getArgc(), cookie->getArgv());
@@ -362,7 +364,7 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 	    Persistent<String>::New(args[1].As<String>()),
 	    req,
 	    1,
-	    new Local<Value>[1]);
+	    new Persistent<Value>[1]); // TODO: This Value creation is wrong.
 	req->data = cookie;
 	// Setup the WiredTiger async operation
 	WTConnection *wtconn;
@@ -408,7 +410,7 @@ Handle<Value> WTTable::Search(const Arguments& args) {
 	    Persistent<String>::New(args[0].As<String>()),
 	    req,
 	    2,
-	    new Local<Value>[2]);
+	    new Persistent<Value>[2]); // TODO: This value creation is wrong
 	req->data = cookie;
 	// Setup the WiredTiger async operation
 	WTConnection *wtconn;
