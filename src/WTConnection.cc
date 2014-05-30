@@ -6,6 +6,7 @@
  */
 
 #include <node.h>
+#include <string.h>
 #include <stdlib.h> // For malloc
 #include "NodeWiredTiger.hpp"
 
@@ -36,6 +37,7 @@ const char * WTConnection::config() const { return config_; }
 /* Calls from worker threads. */
 
 int WTConnection::OpenConnection(const char *home, const char *config) {
+	fprintf(stderr, "In WTConnection::OpenConnection\n");
 	return (wiredtiger_open(home, NULL, config, &conn_));
 }
 
@@ -134,12 +136,11 @@ Handle<Value> WTConnection::Open(const Arguments& args) {
 	Local<Function> callback = args[0].As<Function>();
 
 	ConnectionWorker *worker = new ConnectionWorker(
-	    conn, new NanCallback(callback), conn->home(), conn->config());
+	    Persistent<Function>::New(callback),
+	    Persistent<Object>::New(args.This()),
+	    conn, conn->home(), conn->config());
 
-	// Avoid GC
-	Local<Object> _this = args.This();
-	worker->SavePersistent("connection", _this);
-	NanAsyncQueueWorker(worker);
+	worker->Queue();
 	return scope.Close(Undefined());
 }
 }

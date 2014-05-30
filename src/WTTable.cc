@@ -9,6 +9,7 @@
 #include "wiredtiger.h"
 #include <unistd.h> // For sleep
 #include <stdlib.h> // For malloc
+#include <string.h>
 #include <string>
 
 #include "NodeWiredTiger.hpp"
@@ -154,13 +155,10 @@ Handle<Value> WTTable::Open(const Arguments &args) {
 		    "WTTable::Open() requires a callback argument");
 	Local<Function> callback = args[0].As<Function>();
 	OpenTableWorker *worker = new OpenTableWorker(
-	    table,
-	    new NanCallback(callback));
+	    Persistent<Function>::New(callback),
+	    Persistent<Object>::New(args.This()), table);
 
-	// Avoid GC
-	Local<Object> _this = args.This();
-	worker->SavePersistent("table", _this);
-	NanAsyncQueueWorker(worker);
+	worker->Queue();
 	return scope.Close(Undefined());
 }
 
@@ -344,7 +342,6 @@ Handle<Value> WTTable::Put(const Arguments& args) {
 
 	if (args.Length() != 3 ||
 	    !args[0]->IsString() ||
-	    //!args[1]->IsString() ||
 	    !args[2]->IsFunction())
 		NODE_WT_THROW_EXCEPTION(
 		    "Put() requires key/value and callback argument");

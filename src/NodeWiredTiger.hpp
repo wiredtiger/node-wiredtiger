@@ -9,7 +9,7 @@
 #define NODE_WIREDTIGER_H
 
 #include <node.h>
-#include <nan.h>
+#include "AsyncWorkers.hpp"
 #include "wiredtiger.h"
 
 namespace wiredtiger {
@@ -70,34 +70,35 @@ private:
 	const char *config_;
 };
 
-class ConnectionWorker : public NanAsyncWorker {
+class WTCursor : public node::ObjectWrap {
 public:
-	ConnectionWorker(
-	    WTConnection *conn,
-	    NanCallback *callback,
-	    const char *home,
-	    const char *config
-	);
+	static void Init(v8::Handle<v8::Object> target);
+	static v8::Handle<v8::Value> NewInstance(
+	    v8::Local<v8::Object> &wttable,
+	    v8::Local<v8::String> &config);
 
-	ConnectionWorker();
-	virtual void Execute();
+	WTCursor(WTTable *wttable, const char *config);
+	~WTCursor();
+
+	int NextImpl(char **keyp, char **valuep);
+	int SearchImpl(v8::Handle<v8::String> key, char **valuep);
+
+	int startCursorOp(v8::Handle<v8::Function> callback);
+	v8::Persistent<v8::Function> Emit;
+	WTTable *wttable() const;
+	const char *config() const;
+
 private:
-	WTConnection *conn_;
-	const char *home_;
+	static v8::Handle<v8::Value> New(const v8::Arguments& args);
+	static v8::Handle<v8::Value> Next(const v8::Arguments& args);
+	static v8::Handle<v8::Value> Search(const v8::Arguments& args);
+
+	WTTable *wttable_;
+	WT_CURSOR *cursor_;
+	WT_SESSION *session_;
+	const char *uri_;
 	const char *config_;
-};
-
-class OpenTableWorker : public NanAsyncWorker {
-public:
-	OpenTableWorker(
-	    WTTable *table,
-	    NanCallback *callback
-	);
-
-	OpenTableWorker();
-	virtual void Execute();
-private:
-	WTTable *table_;
+	int inOp;
 };
 
 #define	NODE_WT_THROW_EXCEPTION_WTERR(msg, err)	do {			\

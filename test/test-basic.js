@@ -33,11 +33,11 @@ const numGetsPerThread = options.numGets / options.getConcurrency;
 var startTime;
 var queryStartTime;
 
-var stringOptions = JSON.stringify(options);
-var parsedOptions = JSON.parse(stringOptions);
-console.log(parsedOptions.numGets);
-console.log(JSON.stringify(parsedOptions, null, " "));
-console.log(options);
+//var stringOptions = JSON.stringify(options);
+//var parsedOptions = JSON.parse(stringOptions);
+//console.log(parsedOptions.numGets);
+//console.log(JSON.stringify(parsedOptions, null, " "));
+//console.log(options);
 
 function logProgress(start, optype, ops) {
 	du(options.db, function(err, size) {
@@ -88,6 +88,13 @@ conn.Open( function(err) {
 		startTime = Date.now()
 		for (var i = 0; i < options.putConcurrency; i++)
 			doPut(i, 0);
+		var cursor = new wiredtiger.WTCursor(table);
+		cursor.Next( function(err, key, value) {
+			if (err)
+				throw err
+			console.log("cursor next key: " + key);
+		});
+
 	});
 
 	function doGet (threadNum, itemNum) {

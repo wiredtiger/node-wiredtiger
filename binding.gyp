@@ -6,6 +6,7 @@
           "src/wiredtiger.cc",
           "src/AsyncWorkers.cc",
           "src/WTConnection.cc",
+          "src/WTCursor.cc",
           "src/WTTable.cc"
       ],
       "include_dirs": [ "./include", "<!(node -e \"require('nan')\")" ],
