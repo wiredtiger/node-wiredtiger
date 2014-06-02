@@ -80,6 +80,7 @@ public:
 	WTCursor(WTTable *wttable, const char *config);
 	~WTCursor();
 
+	int CloseImpl();
 	int NextImpl(char **keyp, char **valuep);
 	int SearchImpl(v8::Handle<v8::String> key, char **valuep);
 
@@ -89,6 +90,7 @@ public:
 	const char *config() const;
 
 private:
+	static v8::Handle<v8::Value> Close(const v8::Arguments& args);
 	static v8::Handle<v8::Value> New(const v8::Arguments& args);
 	static v8::Handle<v8::Value> Next(const v8::Arguments& args);
 	static v8::Handle<v8::Value> Search(const v8::Arguments& args);

@@ -50,6 +50,22 @@ function logProgress(start, optype, ops) {
 	});
 }
 
+// traverse with an iterator
+function getNext (cursor, count) {
+	if (count++ % 100000 === 0)
+		logProgress(queryStartTime, "iterator next", count);
+	cursor.Next( function(err, key, value) {
+		if (err)
+			throw err
+		if (key == null) {
+			console.log("Reached end of cursor traverse");
+			cursor.Close();
+		} else {
+			process.nextTick(function() { getNext(cursor, count) })
+		}
+	});
+}
+
 var conn = new wiredtiger.WTConnection(options.db, 'create');
 conn.Open( function(err) {
 	if (err)
@@ -70,7 +86,7 @@ conn.Open( function(err) {
 		if (itemNum == numPutsPerThread)
 			return
 		var keyOffset =
-       		    (threadNum * options.numPutsPerThread) + itemNum;
+       		    (threadNum * numPutsPerThread) + itemNum;
 		var data = randomString.generate(options.valueSize);
 		table.Put('abc' + keyOffset, data, function(err) {
 			if (err)
@@ -89,12 +105,7 @@ conn.Open( function(err) {
 		for (var i = 0; i < options.putConcurrency; i++)
 			doPut(i, 0);
 		var cursor = new wiredtiger.WTCursor(table);
-		cursor.Next( function(err, key, value) {
-			if (err)
-				throw err
-			console.log("cursor next key: " + key);
-		});
-
+		getNext(cursor, 0);
 	});
 
 	function doGet (threadNum, itemNum) {
@@ -103,12 +114,11 @@ conn.Open( function(err) {
 		if (itemNum == numGetsPerThread)
 			return
 		var keyOffset =
-	       	    (threadNum * options.numGetsPerThread) + itemNum;
+	       	    (threadNum * numGetsPerThread) + itemNum;
 		keyOffset = keyOffset % options.numPuts;
 		table.Search('abc' + keyOffset, function(err, result) {
 			if (err)
 				throw err
-			//console.log('Did put: ' + threadNum + ':' + itemNum);
 			didGet();
 			itemNum++;
 			process.nextTick(function() {
@@ -122,9 +132,13 @@ conn.Open( function(err) {
 			doGet(i, 0);
 		}
 	}
+	function afterGets() {
+		console.log("Retrieved " + options.numGets + " items");
+		console.log("About to traverse with cursor");
+		queryStartTime = Date.now()
+		var cursor = new wiredtiger.WTCursor(table);
+		getNext(cursor, 0);
+	}
 });
 
-function afterGets() {
-	console.log("Retrieved " + options.numGets + " items");
-}
 

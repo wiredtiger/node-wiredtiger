@@ -103,16 +103,13 @@ void CursorNextWorker::Execute() {
 
 void CursorNextWorker::ExecuteComplete()
 {
-	fprintf(stderr, "In executeComplete\n");
 	if (errmsg != NULL) {
-		fprintf(stderr, "Calling back to user with error: %s\n", errmsg);
 		Local<Value> argv[] = {
 		    Exception::Error(String::New(errmsg))
 		};
 		makeCallback(1, argv);
 	/* A nul key is equivalent to WT_NOTFOUND */
 	} else if (key_ == NULL) {
-		fprintf(stderr, "Calling back to user with empty\n");
 		Local<Value> argv[] = {
 		    Local<Value>::New(Null()),
 		    Local<Value>::New(Null()),
@@ -120,7 +117,6 @@ void CursorNextWorker::ExecuteComplete()
 		};
 		makeCallback(3, argv);
 	} else {
-		fprintf(stderr, "Calling back to user with key/value\n");
 		Local<Value> argv[] = {
 		    Local<Value>::New(Null()),
 		    Local<Value>::New(String::New(key_)),
