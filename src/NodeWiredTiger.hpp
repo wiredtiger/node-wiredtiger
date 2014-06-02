@@ -82,7 +82,7 @@ public:
 
 	int CloseImpl();
 	int NextImpl(char **keyp, char **valuep);
-	int SearchImpl(v8::Handle<v8::String> key, char **valuep);
+	int SearchImpl(char *key, char **valuep);
 
 	int startCursorOp(v8::Handle<v8::Function> callback);
 	v8::Persistent<v8::Function> Emit;

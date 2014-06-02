@@ -50,22 +50,6 @@ function logProgress(start, optype, ops) {
 	});
 }
 
-// traverse with an iterator
-function getNext (cursor, count) {
-	if (count++ % 100000 === 0)
-		logProgress(queryStartTime, "iterator next", count);
-	cursor.Next( function(err, key, value) {
-		if (err)
-			throw err
-		if (key == null) {
-			console.log("Reached end of cursor traverse");
-			cursor.Close();
-		} else {
-			process.nextTick(function() { getNext(cursor, count) })
-		}
-	});
-}
-
 var conn = new wiredtiger.WTConnection(options.db, 'create');
 conn.Open( function(err) {
 	if (err)
@@ -73,6 +57,7 @@ conn.Open( function(err) {
 
 	var didPut = _.after(options.numPuts, afterPuts);
 	var didGet = _.after(options.numGets, afterGets);
+	var didTraverse = _.after(options.numGets, afterTraverse);
 	var totalWrites = 0;
 	var totalSearches = 0;
 	var configString = "create";
@@ -104,8 +89,6 @@ conn.Open( function(err) {
 		startTime = Date.now()
 		for (var i = 0; i < options.putConcurrency; i++)
 			doPut(i, 0);
-		var cursor = new wiredtiger.WTCursor(table);
-		getNext(cursor, 0);
 	});
 
 	function doGet (threadNum, itemNum) {
@@ -125,6 +108,7 @@ conn.Open( function(err) {
 				doGet(threadNum, itemNum) })
 		});
 	}
+
 	function afterPuts() {
 		console.log("Finished puts! Yay!");
 		queryStartTime = Date.now()
@@ -132,12 +116,48 @@ conn.Open( function(err) {
 			doGet(i, 0);
 		}
 	}
+
+	// traverse with an iterator
+	function getNext (cursor, count) {
+		if (count++ % 100000 === 0)
+			logProgress(queryStartTime, "iterator next", count);
+		cursor.Next( function(err, key, value) {
+			if (err)
+				throw err
+			if (key == null) {
+				console.log("Reached end of cursor traverse");
+				cursor.Close();
+			} else {
+				didTraverse();
+				process.nextTick(function() {
+				    getNext(cursor, count) })
+			}
+		});
+	}
+
 	function afterGets() {
 		console.log("Retrieved " + options.numGets + " items");
 		console.log("About to traverse with cursor");
 		queryStartTime = Date.now()
 		var cursor = new wiredtiger.WTCursor(table);
 		getNext(cursor, 0);
+	}
+
+	function afterTraverse() {
+		console.log("About to search with cursor");
+		var cursor = new wiredtiger.WTCursor(table);
+		var keyOffset = options.numPuts / 2;
+		cursor.Search('abc' + keyOffset, function(err, value) {
+			if (err)
+				throw err
+			console.log("Search returned: %s", value);
+			cursor.Next( function(err, key, value) {
+				if (err)
+					throw err
+				console.log("Next key: " + key);
+				cursor.Close();
+			});
+		});
 	}
 });
 

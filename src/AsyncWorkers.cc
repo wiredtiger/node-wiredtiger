@@ -90,9 +90,6 @@ CursorNextWorker::~CursorNextWorker()
 void CursorNextWorker::Execute() {
 	char errbuf[256];
 	int ret;
-	/*
-	 * TODO: How to handle WT_NOTFOUND??
-	 */
 	ret = cursor_->NextImpl(&key_, &value_);
 	if (ret != 0) {
 		snprintf(errbuf, 256, "WTCursor::Next failed: %s",
@@ -131,14 +128,14 @@ CursorSearchWorker::CursorSearchWorker(
     Persistent<Function> callback,
     Persistent<Object> object,
     WTCursor *cursor,
-    Persistent<String> key
+    char *key
     ) : AsyncWorker(callback, object),
        	cursor_(cursor), key_(key), value_(NULL)
 {
 }
 
 CursorSearchWorker::~CursorSearchWorker() {
-	key_.Dispose();
+	free(key_);
 	if (value_ != NULL)
 		free(value_);
 	if (errmsg != NULL)
@@ -148,9 +145,6 @@ CursorSearchWorker::~CursorSearchWorker() {
 void CursorSearchWorker::Execute() {
 	char errbuf[256];
 	int ret;
-	/*
-	 * TODO: How to handle WT_NOTFOUND??
-	 */
 	if ((ret = cursor_->SearchImpl(key_, &value_)) != 0) {
 		snprintf(errbuf, 256, "WTCursor::Search failed: %s",
 		    wiredtiger_strerror(ret));
