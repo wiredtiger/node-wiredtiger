@@ -30,6 +30,7 @@ if (!fs.existsSync(options.db)) {
 // Setup some global variables.
 const numPutsPerThread = options.numPuts / options.putConcurrency;
 const numGetsPerThread = options.numGets / options.getConcurrency;
+const verbose = 1;
 var startTime;
 var queryStartTime;
 
@@ -58,18 +59,20 @@ conn.Open( function(err) {
 	var didPut = _.after(options.numPuts, afterPuts);
 	var didGet = _.after(options.numGets, afterGets);
 	var didTraverse = _.after(options.numGets, afterTraverse);
+	var didCursorSearch = _.after(options.numGets, afterCursorSearch);
 	var totalWrites = 0;
 	var totalSearches = 0;
+	var totalTraverse = 0;
 	var configString = "create";
 	if (options.compression != "none")
 		configString += ",block_compressor=" + options.compression;
 	var table = new wiredtiger.WTTable(conn, 'table:test', configString);
 
 	function doPut (threadNum, itemNum) {
-		if (totalWrites++ % 100000 === 0)
-			logProgress(startTime, "puts", totalWrites);
 		if (itemNum == numPutsPerThread)
 			return
+		if (totalWrites++ % 100000 === 0 && verbose > 1)
+			logProgress(startTime, "puts", totalWrites);
 		var keyOffset =
        		    (threadNum * numPutsPerThread) + itemNum;
 		var data = randomString.generate(options.valueSize);
@@ -92,10 +95,10 @@ conn.Open( function(err) {
 	});
 
 	function doGet (threadNum, itemNum) {
-		if (totalSearches++ % 100000 === 0)
-			logProgress(queryStartTime, "searches", totalSearches);
 		if (itemNum == numGetsPerThread)
 			return
+		if (totalSearches++ % 100000 === 0 && verbose > 1)
+			logProgress(queryStartTime, "searches", totalSearches);
 		var keyOffset =
 	       	    (threadNum * numGetsPerThread) + itemNum;
 		keyOffset = keyOffset % options.numPuts;
@@ -110,7 +113,8 @@ conn.Open( function(err) {
 	}
 
 	function afterPuts() {
-		console.log("Finished puts! Yay!");
+		console.log("Finished puts");
+		logProgress(startTime, "puts", totalWrites);
 		queryStartTime = Date.now()
 		for (var i = 0; i < options.getConcurrency; i++) {
 			doGet(i, 0);
@@ -118,9 +122,9 @@ conn.Open( function(err) {
 	}
 
 	// traverse with an iterator
-	function getNext (cursor, count) {
-		if (count++ % 100000 === 0)
-			logProgress(queryStartTime, "iterator next", count);
+	function getNext (cursor) {
+		if (totalTraverse++ % 100000 === 0 && verbose > 1)
+			logProgress(queryStartTime, "iterator next", totalTraverse);
 		cursor.Next( function(err, key, value) {
 			if (err)
 				throw err
@@ -130,35 +134,52 @@ conn.Open( function(err) {
 			} else {
 				didTraverse();
 				process.nextTick(function() {
-				    getNext(cursor, count) })
+				    getNext(cursor) })
 			}
 		});
 	}
 
 	function afterGets() {
 		console.log("Retrieved " + options.numGets + " items");
+		logProgress(queryStartTime, "searches", totalSearches);
 		console.log("About to traverse with cursor");
 		queryStartTime = Date.now()
 		var cursor = new wiredtiger.WTCursor(table);
-		getNext(cursor, 0);
+		getNext(cursor);
+	}
+
+	function doCursorSearch(cursor, threadNum, itemNum) {
+		if (itemNum == numGetsPerThread) {
+			cursor.Close();
+			return;
+		}
+		if (totalSearches++ % 100000 === 0 && verbose > 1)
+			logProgress(queryStartTime, "cursor searches", totalSearches);
+		var keyOffset =
+	       	    (threadNum * numGetsPerThread) + itemNum;
+		keyOffset = keyOffset % options.numPuts;
+		cursor.Search('abc' + keyOffset, function(err, result) {
+			if (err)
+				throw err
+			didCursorSearch();
+			itemNum++;
+			process.nextTick(function() {
+				doCursorSearch(cursor, threadNum, itemNum) })
+		});
 	}
 
 	function afterTraverse() {
-		console.log("About to search with cursor");
-		var cursor = new wiredtiger.WTCursor(table);
-		var keyOffset = options.numPuts / 2;
-		cursor.Search('abc' + keyOffset, function(err, value) {
-			if (err)
-				throw err
-			console.log("Search returned: %s", value);
-			cursor.Next( function(err, key, value) {
-				if (err)
-					throw err
-				console.log("Next key: " + key);
-				cursor.Close();
-			});
-		});
+		logProgress(queryStartTime, "iterator next", totalTraverse);
+		totalSearches = 0;
+		queryStartTime = Date.now()
+		for (var i = 0; i < options.getConcurrency; i++) {
+			var cursor = new wiredtiger.WTCursor(table);
+			doCursorSearch(cursor, i, 0);
+		}
+	}
+	function afterCursorSearch() {
+		logProgress(queryStartTime, "cursor searches", totalSearches);
+		console.log("Finished cursor searches");
 	}
 });
-
 
