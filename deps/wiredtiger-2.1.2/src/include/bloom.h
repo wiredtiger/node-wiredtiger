@@ -6,7 +6,7 @@
  */
 /*
  * REFERENCES:
- *      http://www.eecs.harvard.edu/~kirsch/pubs/bbbf/esa06.pdf
+ *      https://www.eecs.harvard.edu/~michaelm/postscripts/tr-02-05.pdf
  *      http://code.google.com/p/cityhash-c/
  */
 
